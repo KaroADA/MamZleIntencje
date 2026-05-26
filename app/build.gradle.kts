@@ -38,6 +38,7 @@ android {
     }
     buildFeatures {
         compose = true
+        aidl = true
     }
 }
 
@@ -64,4 +65,8 @@ dependencies {
     implementation("androidx.room:room-ktx:${room_version}")
 
     ksp("androidx.room:room-compiler:2.5.0")
+
+    val shizuku_version = "13.1.5"
+    implementation("dev.rikka.shizuku:api:$shizuku_version")
+    implementation("dev.rikka.shizuku:provider:$shizuku_version")
 }
