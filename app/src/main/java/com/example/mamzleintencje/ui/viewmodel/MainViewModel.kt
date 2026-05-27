@@ -2,12 +2,33 @@ package com.example.mamzleintencje.ui.viewmodel
 
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.example.mamzleintencje.data.IntentRecord
 import com.example.mamzleintencje.data.IntentType
+import com.example.mamzleintencje.monitor.MonitorState
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class MainViewModel : ViewModel() {
+    private val _monitorState = MutableStateFlow<MonitorState>(MonitorState.Connecting)
+    val monitorState = _monitorState.asStateFlow()
+
+    fun updateMonitorState(state: MonitorState) {
+        _monitorState.value = state
+    }
+
+    private val _restartSignal = MutableSharedFlow<Unit>()
+    val restartSignal = _restartSignal.asSharedFlow()
+
+    fun restartMonitor() {
+        viewModelScope.launch {
+            _restartSignal.emit(Unit)
+        }
+    }
+
     data class FilterState(
         val minCvss: Double? = null,
         val intentType: String? = null,

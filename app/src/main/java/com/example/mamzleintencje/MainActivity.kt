@@ -13,6 +13,7 @@ import com.example.mamzleintencje.monitor.MonitorState
 import com.example.mamzleintencje.ui.screens.MainScreen
 import com.example.mamzleintencje.ui.theme.MamZłeIntencjeTheme
 import com.example.mamzleintencje.ui.viewmodel.MainViewModel
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private lateinit var monitor: IntentMonitor
@@ -20,12 +21,16 @@ class MainActivity : ComponentActivity() {
     private val TAG = "UI_MAIN"
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        monitor = IntentMonitor(this, lifecycleScope) { state ->
-            runOnUiThread {
-                handleMonitorState(state)
+        
+        setupMonitor()
+
+        lifecycleScope.launch {
+            viewModel.restartSignal.collect {
+                monitor.destroy()
+                setupMonitor()
             }
         }
-        monitor.start()
+
         enableEdgeToEdge()
         setContent {
             MamZłeIntencjeTheme {
@@ -37,6 +42,16 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         monitor.destroy()
     }
+    private fun setupMonitor() {
+        monitor = IntentMonitor(this, lifecycleScope) { state ->
+            runOnUiThread {
+                viewModel.updateMonitorState(state)
+                handleMonitorState(state)
+            }
+        }
+        monitor.start()
+    }
+
     // TODO: coś w UI zamiast logów
     private fun handleMonitorState(state: MonitorState) {
         when (state) {
