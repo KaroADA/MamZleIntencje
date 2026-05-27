@@ -18,7 +18,8 @@ data class IntentRecord(
     val dispatchTime: Long? = null,
     val finishTime: Long? = null,
 
-    var threatScore: Int = 0
+    val cvssVector: String = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+    val cvssBaseScore: Double = 0.0
 )
 
 enum class IntentType {

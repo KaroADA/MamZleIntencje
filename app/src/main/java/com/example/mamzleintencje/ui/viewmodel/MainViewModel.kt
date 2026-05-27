@@ -1,15 +1,11 @@
 package com.example.mamzleintencje.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
-import com.example.mamzleintencje.MonitorState
 import com.example.mamzleintencje.data.IntentRecord
 import com.example.mamzleintencje.data.IntentType
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 class MainViewModel : ViewModel() {
-    private fun getMockIntents(): List<IntentRecord> {
+    fun getMockIntents(): List<IntentRecord> {
         val now = System.currentTimeMillis()
         return listOf(
             IntentRecord(
@@ -21,7 +17,8 @@ class MainViewModel : ViewModel() {
                 intentType = IntentType.BROADCAST,
                 extrasSize = 0,
                 extrasDump = null,
-                threatScore = 95
+                cvssVector = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
+                cvssBaseScore = 9.3
             ),
             IntentRecord(
                 id = 2,
@@ -32,7 +29,8 @@ class MainViewModel : ViewModel() {
                 intentType = IntentType.BROADCAST,
                 extrasSize = 124,
                 extrasDump = "pdus data inside",
-                threatScore = 88
+                cvssVector = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+                cvssBaseScore = 7.9
             ),
             IntentRecord(
                 id = 3,
@@ -43,7 +41,8 @@ class MainViewModel : ViewModel() {
                 intentType = IntentType.IMPLICIT,
                 extrasSize = 42,
                 extrasDump = "url: http://phishing-test.com",
-                threatScore = 60
+                cvssVector = "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N",
+                cvssBaseScore = 6.1
             ),
             IntentRecord(
                 id = 4,
@@ -54,7 +53,8 @@ class MainViewModel : ViewModel() {
                 intentType = IntentType.BROADCAST,
                 extrasSize = 0,
                 extrasDump = null,
-                threatScore = 5
+                cvssVector = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
+                cvssBaseScore = 0.0
             )
         )
     }
