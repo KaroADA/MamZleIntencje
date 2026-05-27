@@ -1,10 +1,29 @@
 package com.example.mamzleintencje.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.example.mamzleintencje.data.IntentRecord
 import com.example.mamzleintencje.data.IntentType
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class MainViewModel : ViewModel() {
+    data class FilterState(
+        val minCvss: Double? = null,
+        val intentType: String? = null,
+        val hasExtras: Boolean = false,
+        val hideSystemApps: Boolean = false
+    )
+
+    private val _filterState = MutableStateFlow(FilterState())
+    val filterState = _filterState.asStateFlow()
+
+    fun updateFilter(update: (FilterState) -> FilterState) {
+        _filterState.value = update(_filterState.value)
+
+        Log.d("MainViewModel", "Filter state changed: ${_filterState.value}")
+    }
+
     fun getMockIntents(): List<IntentRecord> {
         val now = System.currentTimeMillis()
         return listOf(

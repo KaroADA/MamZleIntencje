@@ -21,16 +21,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.mamzleintencje.data.IntentRecord
 import com.example.mamzleintencje.ui.theme.MamZłeIntencjeTheme
 import com.example.mamzleintencje.ui.viewmodel.MainViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun LogListScreen(viewModel: MainViewModel) {
@@ -51,6 +56,9 @@ fun LogListContent(logs: List<IntentRecord>, modifier: Modifier = Modifier) {
 
 @Composable
 fun IntentLogCard(record: IntentRecord) {
+    val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    val timeString = timeFormatter.format(Date(record.timestamp))
+
     val (colorSchemeAccent, labelText) = when {
         record.cvssBaseScore >= 9.0 -> Color(0xFFB71C1C) to "CRITICAL"
         record.cvssBaseScore >= 7.0 -> Color(0xFFE53935) to "HIGH"
@@ -78,15 +86,28 @@ fun IntentLogCard(record: IntentRecord) {
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = record.callerPackage ?: "system_server",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = record.callerPackage ?: "system_server",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Text(
+                        text = " • $timeString",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.width(8.dp))

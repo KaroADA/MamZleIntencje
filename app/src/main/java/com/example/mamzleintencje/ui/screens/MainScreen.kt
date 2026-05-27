@@ -4,10 +4,14 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
@@ -33,6 +38,7 @@ import com.example.mamzleintencje.ui.navigation.Screen
 import com.example.mamzleintencje.ui.viewmodel.MainViewModel
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
     val navController = rememberNavController()
@@ -40,6 +46,9 @@ fun MainScreen(viewModel: MainViewModel) {
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+
+    val filterState by viewModel.filterState.collectAsState()
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
     var isBottomBarVisible by remember { mutableStateOf(true) }
 
@@ -61,7 +70,87 @@ fun MainScreen(viewModel: MainViewModel) {
     }
 
     Scaffold(
-        modifier = Modifier.nestedScroll(nestedScrollConnection),
+        modifier = Modifier
+            .nestedScroll(nestedScrollConnection)
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            if (currentRoute == Screen.Logs.route) {
+                TopAppBar(
+                    title = {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .layout { measurable, constraints ->
+                                    val horizontalPadding = 16.dp.roundToPx()
+                                    val placeable = measurable.measure(constraints.copy(maxWidth = constraints.maxWidth + horizontalPadding))
+                                    layout(placeable.width - horizontalPadding, placeable.height) {
+                                        placeable.placeRelative(-horizontalPadding, 0)
+                                    }
+                                }
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val checkIcon: @Composable () -> Unit = {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
+                                )
+                            }
+
+                            FilterChip(
+                                selected = filterState.hideSystemApps,
+                                onClick = { viewModel.updateFilter { it.copy(hideSystemApps = !it.hideSystemApps) } },
+                                label = { Text("Hide System") },
+                                leadingIcon = if (filterState.hideSystemApps) checkIcon else null
+                            )
+
+                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
+
+                            FilterChip(
+                                selected = filterState.minCvss == 7.0,
+                                onClick = { viewModel.updateFilter { it.copy(minCvss = if (it.minCvss == 7.0) null else 7.0) } },
+                                label = { Text("High Risk") },
+                                leadingIcon = if (filterState.minCvss == 7.0) checkIcon else null
+                            )
+                            FilterChip(
+                                selected = filterState.minCvss == 4.0,
+                                onClick = { viewModel.updateFilter { it.copy(minCvss = if (it.minCvss == 4.0) null else 4.0) } },
+                                label = { Text("Warnings") },
+                                leadingIcon = if (filterState.minCvss == 4.0) checkIcon else null
+                            )
+
+                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
+
+                            FilterChip(
+                                selected = filterState.hasExtras,
+                                onClick = { viewModel.updateFilter { it.copy(hasExtras = !it.hasExtras) } },
+                                label = { Text("With Extras") },
+                                leadingIcon = if (filterState.hasExtras) checkIcon else null
+                            )
+
+                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
+
+                            listOf("Broadcast", "Activity", "Service").forEach { type ->
+                                FilterChip(
+                                    selected = filterState.intentType == type,
+                                    onClick = { viewModel.updateFilter { it.copy(intentType = if (it.intentType == type) null else type) } },
+                                    label = { Text(type) },
+                                    leadingIcon = if (filterState.intentType == type) checkIcon else null
+                                )
+                            }
+                        }
+                    },
+                    scrollBehavior = scrollBehavior,
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        scrolledContainerColor = MaterialTheme.colorScheme.surface
+                    )
+                )
+            }
+        },
         contentWindowInsets = WindowInsets.statusBars
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize()) {
