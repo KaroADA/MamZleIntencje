@@ -2,11 +2,13 @@ package com.example.mamzleintencje.monitor
 
 import android.content.Context
 import android.util.Log
+import com.example.mamzleintencje.data.IntentDatabase
 import com.example.mamzleintencje.data.IntentRecord
 import com.example.mamzleintencje.data.IntentType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Vector
@@ -17,6 +19,8 @@ class IntentMonitor(
     private val onStateChanged: (MonitorState) -> Unit
 ) {
     private val TAG = "IntentMonitor"
+    private val intentDatabase = IntentDatabase.getDatabase(context)
+
     private val shizukuClient = ShizukuClient(
         context = context,
         onReady = {
@@ -46,6 +50,10 @@ class IntentMonitor(
             for (record in records) {
                 Log.d(TAG, "$record")
             }
+            if (records.isNotEmpty()) {
+                intentDatabase.intentRecordDao().insertAll(records)
+                Log.d(TAG, "Processed ${records.size} records.")
+            }
         }
     }
 
@@ -67,6 +75,17 @@ class IntentMonitor(
         } else {
             null
         }
+    }
+    fun generateIntentHash(
+        action: String?,
+        timestamp: Long,
+        dispatchTime: Long?,
+        extrasDump: String?
+    ): String {
+        val rawSignature = "$action|$timestamp|$dispatchTime|$extrasDump"
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hashBytes = digest.digest(rawSignature.toByteArray(Charsets.UTF_8))
+        return hashBytes.joinToString("") { "%02x".format(it) }
     }
 
     fun parseLines(lines: List<String>): Vector<IntentRecord> {
@@ -106,6 +125,7 @@ class IntentMonitor(
 
             if (action != null && enqTime != null) {
                 res.addElement( IntentRecord(
+                    id = generateIntentHash(action, enqTime, dispTime, extrasDump),
                     timestamp = enqTime,
                     action = action,
                     callerPackage = null,

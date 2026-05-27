@@ -28,7 +28,7 @@ class MainViewModel : ViewModel() {
         val now = System.currentTimeMillis()
         return listOf(
             IntentRecord(
-                id = 1,
+                id = "a",
                 timestamp = now,
                 action = "android.intent.action.BOOT_COMPLETED",
                 callerPackage = "com.evil.spyware.dummy",
@@ -40,7 +40,7 @@ class MainViewModel : ViewModel() {
                 cvssBaseScore = 9.3
             ),
             IntentRecord(
-                id = 2,
+                id = "b",
                 timestamp = now - 5000,
                 action = "android.intent.action.SMS_RECEIVED",
                 callerPackage = "com.example.flashlight",
@@ -52,7 +52,7 @@ class MainViewModel : ViewModel() {
                 cvssBaseScore = 7.9
             ),
             IntentRecord(
-                id = 3,
+                id = "c",
                 timestamp = now - 15000,
                 action = "android.intent.action.VIEW",
                 callerPackage = "com.example.mamzleintencje",
@@ -64,7 +64,7 @@ class MainViewModel : ViewModel() {
                 cvssBaseScore = 6.1
             ),
             IntentRecord(
-                id = 4,
+                id = "d",
                 timestamp = now - 60000,
                 action = "android.intent.action.SCREEN_OFF",
                 callerPackage = "com.android.systemui",

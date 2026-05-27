@@ -4,8 +4,8 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "intent_records")
 data class IntentRecord(
-    @PrimaryKey(autoGenerate = true)
-    val id: Long = 0,
+    @PrimaryKey
+    val id: String,
 
     val timestamp: Long,
     val action: String?,
