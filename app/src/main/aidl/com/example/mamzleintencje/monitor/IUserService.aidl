@@ -1,4 +1,4 @@
-package com.example.mamzleintencje;
+package com.example.mamzleintencje.monitor;
 
 interface IUserService {
     void destroy() = 16777114; // https://github.com/RikkaApps/Shizuku-API#UserService

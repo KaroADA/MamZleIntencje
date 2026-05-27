@@ -1,4 +1,4 @@
-package com.example.mamzleintencje
+package com.example.mamzleintencje.monitor
 
 import java.io.BufferedReader
 import java.io.InputStreamReader

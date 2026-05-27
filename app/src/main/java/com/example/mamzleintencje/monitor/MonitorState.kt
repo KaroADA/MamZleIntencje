@@ -1,4 +1,4 @@
-package com.example.mamzleintencje
+package com.example.mamzleintencje.monitor
 
 sealed interface MonitorState {
     object Connecting : MonitorState

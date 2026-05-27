@@ -1,4 +1,4 @@
-package com.example.mamzleintencje
+package com.example.mamzleintencje.monitor
 
 import android.content.ComponentName
 import android.content.Context
