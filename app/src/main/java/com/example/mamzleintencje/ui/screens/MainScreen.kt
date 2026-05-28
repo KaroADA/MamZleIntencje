@@ -73,15 +73,28 @@ fun MainScreen(viewModel: MainViewModel) {
     val nestedScrollConnection = remember(currentRoute) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (currentRoute == Screen.Logs.route || currentRoute == Screen.Settings.route) {
-                    if (available.y < -10) isBottomBarVisible = false
-                    else if (available.y > 10) isBottomBarVisible = true
-                } else {
-                    isBottomBarVisible = true
+                // Show bar when pulling down, regardless of if content scrolls
+                if (available.y > 10) isBottomBarVisible = true
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                // Hide bar ONLY if content actually scrolls up
+                if (consumed.y < -10 && (currentRoute == Screen.Logs.route || currentRoute == Screen.Settings.route)) {
+                    isBottomBarVisible = false
                 }
                 return Offset.Zero
             }
         }
+    }
+
+    // Reset visibility when navigating between screens
+    LaunchedEffect(currentRoute) {
+        isBottomBarVisible = true
     }
 
     Scaffold(
