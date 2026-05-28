@@ -42,14 +42,22 @@ class IntentMonitor(
     fun triggerScan() {
         scope.launch(Dispatchers.IO) {
             try {
-                val rawOutput = shizukuClient.execute(
-                    "dumpsys activity broadcasts history | sed -n '/Historical broadcasts/,/Historical broadcasts summary/p'"
-                )
-                //val rawOutput = loadDumpFromFile("dumpsys.log") ?: return@launch
-                saveDumpToFile(rawOutput)
-                val lines = rawOutput.lines().map { it.trim() }
-                Log.d(TAG, "${lines.size} lines to process.")
+                val outputFile = File(context.getExternalFilesDir(null), "broadcasts_dump.txt")
 
+                val command = "dumpsys activity broadcasts history | sed -n '/Historical broadcasts/,/Historical broadcasts summary/p' > \"${outputFile.absolutePath}\""
+                shizukuClient.execute(command)
+                Log.d(TAG, "Shell successfully wrote dump to: ${outputFile.absolutePath}")
+
+                //outputFile = File(context.getExternalFilesDir(null), "dumpsys.log")
+
+                if (!outputFile.exists()) {
+                    Log.e(TAG, "Dump file not found at: ${outputFile.absolutePath}")
+                    return@launch
+                }
+                val lines = outputFile.useLines { sequence ->
+                    sequence.map { it.trim() }.toList()
+                }
+                Log.d(TAG, "${lines.size} lines to process.")
                 val records = parseLines(lines)
                 for (record in records) {
                     Log.d(TAG, "$record")
@@ -61,32 +69,6 @@ class IntentMonitor(
             } catch (e: Exception) {
                 Log.e(TAG, "Error executing dumpsys scan", e)
             }
-        }
-    }
-
-    private fun saveDumpToFile(rawOutput: String) {
-        try {
-            val file = File(context.getExternalFilesDir(null), "broadcasts_dump.txt")
-            file.writeText(rawOutput)
-            Log.d(TAG, "Full raw dump successfully saved to: ${file.absolutePath}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to write raw dump to file", e)
-        }
-    }
-    private fun loadDumpFromFile(fileName: String): String? {
-        return try {
-            val file = File(context.getExternalFilesDir(null), fileName)
-            if (file.exists()) {
-                val content = file.readText()
-                Log.d(TAG, "Successfully loaded manual test file from: ${file.absolutePath}")
-                content
-            } else {
-                Log.e(TAG, "Manual test file not found at: ${file.absolutePath}")
-                null
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to read manual test file", e)
-            null
         }
     }
 
