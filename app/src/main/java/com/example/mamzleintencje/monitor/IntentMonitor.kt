@@ -255,6 +255,17 @@ class IntentMonitor(
 
             if (enqTime != null) {
                 val finalAction = action ?: "BROADCAST_DELIVERY"
+
+                val cvssResult = CvssCalculator.calculate(
+                    action = finalAction,
+                    callerPackage = callerPackage,
+                    callerUid = callerUid,
+                    requiredPermissions = requiredPermissions,
+                    extrasSize = extrasSize,
+                    deliveryStatus = deliveryStatus,
+                    deliveredReceivers = deliveredReceivers
+                )
+
                 res.add(IntentRecord(
                     id = generateIntentHash(finalAction, enqTime, dispTime, extrasDump),
                     timestamp = enqTime,
@@ -270,7 +281,9 @@ class IntentMonitor(
                     skipReasons = skipReasons,
                     totalReceiverCount = totalReceiverCount,
                     deliveredReceivers = deliveredReceivers,
-                    skippedReceivers = skippedReceivers
+                    skippedReceivers = skippedReceivers,
+                    cvssVector = cvssResult.vector,
+                    cvssBaseScore = cvssResult.score
                 ))
             }
         }

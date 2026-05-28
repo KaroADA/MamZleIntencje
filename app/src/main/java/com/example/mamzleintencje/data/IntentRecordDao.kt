@@ -21,11 +21,21 @@ interface IntentRecordDao {
     @Query("""
         SELECT * FROM intent_records 
         WHERE 
-            (:searchQuery = '' OR action LIKE '%' || :searchQuery || '%' OR callerPackage LIKE '%' || :searchQuery || '%')
+            (:searchQuery = '' 
+                OR action LIKE '%' || :searchQuery || '%' 
+                OR callerPackage LIKE '%' || :searchQuery || '%'
+                OR deliveredReceivers LIKE '%' || :searchQuery || '%'
+                OR skippedReceivers LIKE '%' || :searchQuery || '%'
+                OR extrasDump LIKE '%' || :searchQuery || '%'
+                OR requiredPermissions LIKE '%' || :searchQuery || '%'
+                OR cvssVector LIKE '%' || :searchQuery || '%'
+                OR skipReasons LIKE '%' || :searchQuery || '%'
+                OR deliveryStatus LIKE '%' || :searchQuery || '%'
+            )
             AND cvssBaseScore >= :minCvss
             AND (:hideSystemApps = 0 OR (callerPackage != 'system_server' AND callerPackage NOT LIKE 'com.android%' AND callerPackage NOT LIKE 'android%'))
             AND (:hasExtras = 0 OR extrasSize > 0)
-            AND (:statusFilter = '' OR deliveryStatus = :statusFilter)
+            AND (:useStatusFilter = 0 OR deliveryStatus IN (:statusFilters))
         ORDER BY timestamp DESC
     """)
     fun getFilteredRecords(
@@ -33,7 +43,8 @@ interface IntentRecordDao {
         minCvss: Double,
         hideSystemApps: Boolean,
         hasExtras: Boolean,
-        statusFilter: String // Room nie radzi sobie dobrze z listami Set<> w takim układzie, lepiej mapować to jakoś inaczej
+        useStatusFilter: Boolean,
+        statusFilters: List<String>
     ): Flow<List<IntentRecord>>
 
     @Query("DELETE FROM intent_records")

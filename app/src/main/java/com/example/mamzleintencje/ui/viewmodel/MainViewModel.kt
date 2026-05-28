@@ -46,8 +46,8 @@ class MainViewModel(application: Application, dao: IntentRecordDao) : AndroidVie
             minCvss = filter.minCvss,
             hideSystemApps = filter.hideSystemApps,
             hasExtras = filter.hasExtras,
-            // (Tutaj musiałbyś dostosować logikę statusów do SQL)
-            statusFilter = filter.allowedStatuses.firstOrNull() ?: ""
+            useStatusFilter = filter.allowedStatuses.isNotEmpty(),
+            statusFilters = filter.allowedStatuses.toList()
         )
     }.stateIn(
         scope = viewModelScope,
