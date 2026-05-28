@@ -18,7 +18,7 @@ object CvssCalculator {
     private const val SYSTEM_UID_THRESHOLD = 10000
 
     private val TRUSTED_PREFIXES = arrayOf(
-        "android",
+        "android.",
         "com.android.",
         "com.samsung.",
         "com.sec.",
@@ -26,7 +26,6 @@ object CvssCalculator {
         "com.qualcomm.",
         "org.microg.",
         "com.google.firebase.",
-        "system",
         "app.revanced."
     )
 
@@ -42,7 +41,8 @@ object CvssCalculator {
         "com.whatsapp",
         "com.google.android.apps.turbo",
         "app.revanced.android.gms",
-        "com.microsoft.office.outlook"
+        "com.microsoft.office.outlook",
+        "com.crispim.coverspin"
     )
 
     private val CRITICAL_ACTIONS = setOf(
@@ -58,7 +58,10 @@ object CvssCalculator {
         "LOCKED_BOOT_COMPLETED",
         "MY_PACKAGE_REPLACED",
         "PACKAGE_ADDED",
-        "PACKAGE_REPLACED"
+        "PACKAGE_REPLACED",
+        "USER_PRESENT",
+        "SCREEN_ON",
+        "SCREEN_OFF"
     )
 
     private val BENIGN_ACTIONS = setOf(
@@ -80,10 +83,7 @@ object CvssCalculator {
         "INPUTMETHOD_STARTING",
         "RESPONSEAXT9INFO",
         "BADGE_COUNT_UPDATE",
-        "DREAMING_STARTED",
-        "USER_PRESENT",
-        "SCREEN_ON",
-        "SCREEN_OFF"
+        "DREAMING_STARTED"
     )
 
     fun calculate(
@@ -111,7 +111,7 @@ object CvssCalculator {
         val isTrustedCaller = (callerUid != null && (callerUid < SYSTEM_UID_THRESHOLD || callerUid == -1)) ||
                 (callerPackage != null && isTrusted(callerPackage))
 
-        val receivers = deliveredReceivers?.split(',', ' ', '\n', '\r')
+        val receivers = deliveredReceivers?.split(Regex("[,\\s\\n\\r]+"))
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() } ?: emptyList()
 
@@ -146,12 +146,6 @@ object CvssCalculator {
         var s = "U"; var c = "N"; var i = "N"; var a = "N"
 
         when {
-            // Trusted caller + no suspicious receivers = 0.0
-            isTrustedCaller && !hasSuspiciousReceiver && !isCritical -> {
-                return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0)
-            }
-
-            // Regression Control: Passive Sniffing
             (isInformational || isPersistence) && hasSuspiciousReceiver -> {
                 c = "L"
                 if (isPersistence) {
@@ -159,6 +153,11 @@ object CvssCalculator {
                     if (!isTrustedCaller) s = "C"
                 }
                 pr = if (isTrustedCaller) "N" else "L"
+            }
+
+            // Trusted caller + no suspicious receivers = 0.0
+            isTrustedCaller && !hasSuspiciousReceiver && !isCritical -> {
+                return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0)
             }
 
             // Custom IPC Risk
