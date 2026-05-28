@@ -4,10 +4,10 @@ import android.content.Context
 import android.util.Log
 import com.example.mamzleintencje.data.IntentDatabase
 import com.example.mamzleintencje.data.IntentRecord
-import com.example.mamzleintencje.data.IntentType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.io.File
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -43,9 +43,15 @@ class IntentMonitor(
 
     fun triggerScan() {
         scope.launch(Dispatchers.IO) {
-            val rawOutput =
-                shizukuClient.execute("dumpsys activity broadcasts history | tail -n 500")
+            val rawOutput = shizukuClient.execute(
+                "dumpsys activity broadcasts history | sed -n '/Historical broadcasts/,/Historical broadcasts summary/p'"
+            )
+            saveDumpToFile(rawOutput)
             val lines = rawOutput.lines().map { it.trim() }
+            val count = lines.count()
+            Log.d(TAG, "$count")
+            Log.d(TAG, "$lines")
+
             val records = parseLines(lines)
             for (record in records) {
                 Log.d(TAG, "$record")
@@ -54,6 +60,16 @@ class IntentMonitor(
                 intentDatabase.intentRecordDao().insertAll(records)
                 Log.d(TAG, "Processed ${records.size} records.")
             }
+        }
+    }
+
+    private fun saveDumpToFile(rawOutput: String) {
+        try {
+            val file = File(context.getExternalFilesDir(null), "broadcasts_dump.txt")
+            file.writeText(rawOutput)
+            Log.d(TAG, "Full raw dump successfully saved to: ${file.absolutePath}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to write raw dump to file", e)
         }
     }
 
@@ -91,50 +107,170 @@ class IntentMonitor(
     fun parseLines(lines: List<String>): Vector<IntentRecord> {
         var i = 0
         val res = Vector<IntentRecord>()
+
         while (i < lines.size) {
             val line = lines[i]
-            if (!line.startsWith("#")) {
+
+            // New broadcast transaction always starts with "Historical Broadcast"
+            if (!line.startsWith("Historical Broadcast")) {
                 i++
                 continue
             }
 
-            val action = extractValue(line, "act=")
-            val pkg = extractValue(line, "pkg=")
-            val cmp = extractValue(line, "cmp=")
+            // --- Initialize Transaction State ---
+            var action: String? = null
+            var pkg: String? = null
+            var cmp: String? = null
 
             var enqTime: Long? = null
             var dispTime: Long? = null
             var finTime: Long? = null
+
+            var requiredPermissions: String? = null
             var extrasDump: String? = null
             var extrasSize = 0
+            var callerPackage: String? = null
+            var callerUid: Int? = null
 
+            var totalReceiverCount = 0
+            var currentReceiverStatus: String? = null
+
+            val deliveredSet = LinkedHashSet<String>()
+            val skippedSet = LinkedHashSet<String>()
+            val skipReasonsSet = LinkedHashSet<String>()
+
+            var hasDelivered = false
+            var hasSkipped = false
+            var hasDeferred = false
+
+            // Extract inline package target on the header line if present (Samsung dynamic filters)
+            val headerFilterMatch = "ReceiverList\\{[^ ]+\\s+[^ ]+\\s+([^/\\s]+)".toRegex().find(line)
+            if (headerFilterMatch != null) {
+                deliveredSet.add(headerFilterMatch.groupValues[1])
+                hasDelivered = true
+            }
+
+            // --- Sub-block Scanning ---
             i++
-            while (i < lines.size && !lines[i].startsWith("#")) {
+            while (i < lines.size && !lines[i].startsWith("Historical Broadcast") && !lines[i].startsWith("Historical broadcasts summary")) {
                 val subLine = lines[i]
-                if (subLine.contains("enq=")) {
-                    enqTime = extractDateValue(subLine, "enq=")
-                    dispTime = extractDateValue(subLine, "disp=")
-                    finTime = extractDateValue(subLine, "fin=")
+
+                if (subLine.startsWith("Intent {")) {
+                    action = extractValue(subLine, "act=") ?: "act=([^ }]+)".toRegex().find(subLine)?.groupValues?.get(1)
+                    pkg = extractValue(subLine, "pkg=")
+                    cmp = extractValue(subLine, "cmp=")
+                } else if (subLine.contains("enqueueClockTime=")) {
+                    // Clock times (Parent block fallback in AOSP Emulator)
+                    enqTime = extractDateValue(subLine, "enqueueClockTime=")
+                    dispTime = extractDateValue(subLine, "dispatchClockTime=")
+                    finTime = dispTime
+                } else if (subLine.contains("requiredPermissions=[")) {
+                    // Extract global required permissions list
+                    requiredPermissions = subLine.substringAfter("requiredPermissions=[").substringBefore("]")
                 } else if (subLine.startsWith("extras:")) {
                     extrasDump = subLine.substringAfter("extras:").trim()
                     val inside = extrasDump.substringAfter("{", "").substringBeforeLast("}", "")
                     extrasSize = if (inside.isNotEmpty()) inside.split(", ").size else 0
+                } else if (subLine.startsWith("name=")) {
+                    // Add receiver details based on the current parsed state context
+                    val activityName = subLine.substringAfter("name=").trim()
+                    if (currentReceiverStatus == "DELIVERED") deliveredSet.add(activityName)
+                    if (currentReceiverStatus == "SKIPPED") skippedSet.add(activityName)
+                } else if (subLine.startsWith("packageName=")) {
+                    val activityPkg = subLine.substringAfter("packageName=").trim()
+                    if (currentReceiverStatus == "DELIVERED") deliveredSet.add(activityPkg)
+                    if (currentReceiverStatus == "SKIPPED") skippedSet.add(activityPkg)
+                } else if (subLine.contains("act=")) {
+                    val match = "act=([^ }]+)".toRegex().find(subLine)
+                    if (action == null) {
+                        action = match?.groupValues?.get(1)
+                    }
+                } else if (subLine.contains("caller=")) {
+                    callerPackage = extractValue(subLine, "caller=")
+                    val uidMatch = "uid=(\\d+)".toRegex().find(subLine)
+                    callerUid = uidMatch?.groupValues?.get(1)?.toIntOrNull()
+                } else if (subLine.contains("terminalCount=")) {
+                    totalReceiverCount = extractValue(subLine, "terminalCount=")?.toIntOrNull() ?: 0
+                } else if (subLine.startsWith("reason:") && currentReceiverStatus == "SKIPPED") {
+                    // Extract multiline drop reason (AOSP Emulator layout)
+                    skipReasonsSet.add(subLine.substringAfter("reason:").trim())
                 }
+
+                // Check Individual Receiver Delivery Lines (Sets the context for subsequent lines)
+                if (subLine.startsWith("DELIVERED")) {
+                    currentReceiverStatus = "DELIVERED"
+                    hasDelivered = true
+
+                    // Parse modern Samsung receiver clock times (s: and e:)
+                    val sTime = extractDateValue(subLine, "s:")
+                    if (sTime != null && dispTime == null) {
+                        dispTime = sTime // Set to first dispatch timestamp
+                    }
+                    val eTime = extractDateValue(subLine, "e:")
+                    if (eTime != null) {
+                        finTime = eTime  // Updates to the latest complete finish timestamp
+                    }
+                } else if (subLine.startsWith("SKIPPED")) {
+                    currentReceiverStatus = "SKIPPED"
+                    hasSkipped = true
+
+                    // Extract inline skip reason if present (Samsung layout)
+                    val inlineReason = "reason:([^/]+)".toRegex().find(subLine)?.groupValues?.get(1)
+                    if (inlineReason != null) {
+                        skipReasonsSet.add(inlineReason.trim())
+                    }
+                } else if (subLine.startsWith("DEFERRED")) {
+                    currentReceiverStatus = "DEFERRED"
+                    hasDeferred = true
+                }
+
+                // Extract dynamic packages inside active receiver blocks
+                val filterMatch = "ReceiverList\\{[^ ]+\\s+[^ ]+\\s+([^/\\s]+)".toRegex().find(subLine)
+                if (filterMatch != null) {
+                    val pkgFromFilter = filterMatch.groupValues[1]
+                    if (currentReceiverStatus == "DELIVERED") deliveredSet.add(pkgFromFilter)
+                    if (currentReceiverStatus == "SKIPPED") skippedSet.add(pkgFromFilter)
+                }
+
                 i++
             }
 
-            if (action != null && enqTime != null) {
-                res.addElement( IntentRecord(
-                    id = generateIntentHash(action, enqTime, dispTime, extrasDump),
+            // Estimate total count if terminalCount was absent/zero
+            if (totalReceiverCount == 0) {
+                totalReceiverCount = deliveredSet.size + skippedSet.size
+            }
+
+            val deliveredReceivers = if (deliveredSet.isNotEmpty()) deliveredSet.joinToString(", ") else null
+            val skippedReceivers = if (skippedSet.isNotEmpty()) skippedSet.joinToString(", ") else null
+            val skipReasons = if (skipReasonsSet.isNotEmpty()) skipReasonsSet.joinToString("; ") else null
+
+            // Determine unified operational status of the entire transaction
+            val deliveryStatus = when {
+                hasSkipped && hasDelivered -> "PARTIALLY_SKIPPED"
+                hasSkipped -> "SKIPPED"
+                hasDeferred -> "DEFERRED"
+                else -> "DELIVERED"
+            }
+
+            // Commit transaction
+            if (enqTime != null) {
+                val finalAction = action ?: "BROADCAST_DELIVERY"
+                res.addElement(IntentRecord(
+                    id = generateIntentHash(finalAction, enqTime, dispTime, extrasDump),
                     timestamp = enqTime,
-                    action = action,
-                    callerPackage = null,
-                    targetComponent = cmp ?: pkg,
-                    intentType = IntentType.BROADCAST,
+                    action = finalAction,
+                    callerPackage = callerPackage,
+                    callerUid = callerUid,
+                    requiredPermissions = requiredPermissions,
                     extrasSize = extrasSize,
                     extrasDump = extrasDump,
                     dispatchTime = dispTime,
-                    finishTime = finTime
+                    finishTime = finTime,
+                    deliveryStatus = deliveryStatus,
+                    skipReasons = skipReasons,
+                    totalReceiverCount = totalReceiverCount,
+                    deliveredReceivers = deliveredReceivers,
+                    skippedReceivers = skippedReceivers
                 ))
             }
         }
