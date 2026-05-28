@@ -61,7 +61,9 @@ object CvssCalculator {
         "PACKAGE_REPLACED",
         "USER_PRESENT",
         "SCREEN_ON",
-        "SCREEN_OFF"
+        "SCREEN_OFF",
+        "ACTION_POWER_CONNECTED",
+        "ACTION_POWER_DISCONNECTED"
     )
 
     private val BENIGN_ACTIONS = setOf(
@@ -70,8 +72,6 @@ object CvssCalculator {
         "BATTERY_CHANGED",
         "BATTERY_LEVEL_CHANGED",
         "SCAN_RESULTS",
-        "POWER_CONNECTED",
-        "POWER_DISCONNECTED",
         "CONNECTIVITY_CHANGE",
         "RECEIVE",
         "CLOSE_SYSTEM_DIALOGS",
@@ -103,13 +103,22 @@ object CvssCalculator {
             return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0)
         }
 
-        if (BENIGN_ACTIONS.any { actUpper.contains(it) }) {
+        // 1. Classify Action First
+        val isInformational = BENIGN_ACTIONS.any { actUpper.contains(it) } ||
+                actUpper.contains("TELEMETRY") || actUpper.contains("STATUS_BAR") || actUpper.contains("DIAGMON")
+        val isPersistence = PERSISTENCE_ACTIONS.any { actUpper.contains(it) }
+        val isCritical = CRITICAL_ACTIONS.any { actUpper.contains(it) }
+        val isCustomAction = act.contains(".") && !isTrusted(act.substringBeforeLast('.'))
+
+        if (isInformational && !actUpper.contains("POWER")) {
             return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0)
         }
 
-        // 1. Identify Trusted Entities
-        val isTrustedCaller = (callerUid != null && (callerUid < SYSTEM_UID_THRESHOLD || callerUid == -1)) ||
-                (callerPackage != null && isTrusted(callerPackage))
+        // 2. Identify Trusted Entities & Anti-Spoofing
+        val isSystemUid = callerUid != null && (callerUid < SYSTEM_UID_THRESHOLD || callerUid == -1)
+        val isTrustedPkg = callerPackage != null && isTrusted(callerPackage)
+
+        val isTrustedCaller = isSystemUid || (isTrustedPkg && !isCustomAction)
 
         val receivers = deliveredReceivers?.split(Regex("[,\\s\\n\\r]+"))
             ?.map { it.trim() }
@@ -123,13 +132,6 @@ object CvssCalculator {
                 break
             }
         }
-
-        // 2. Classify Action
-        val isInformational = BENIGN_ACTIONS.any { actUpper.contains(it) } ||
-                actUpper.contains("TELEMETRY") || actUpper.contains("STATUS_BAR") || actUpper.contains("DIAGMON")
-        val isPersistence = PERSISTENCE_ACTIONS.any { actUpper.contains(it) }
-        val isCritical = CRITICAL_ACTIONS.any { actUpper.contains(it) }
-        val isCustomAction = !act.startsWith("android.") && !act.startsWith("com.android.")
 
         // 3. Boundary Crossing (Caller vs Receivers)
         var crossedBorders = false
@@ -146,6 +148,12 @@ object CvssCalculator {
         var s = "U"; var c = "N"; var i = "N"; var a = "N"
 
         when {
+            // Shell activity (2000) with custom action is a high-risk exploit/spoofing attempt
+            callerUid == 2000 && isCustomAction -> {
+                s = "C"; c = "H"; i = "H"; a = "L"
+            }
+
+            // Regression Control: Passive Sniffing (Prioritize catching suspicious observers)
             (isInformational || isPersistence) && hasSuspiciousReceiver -> {
                 c = "L"
                 if (isPersistence) {
@@ -155,19 +163,14 @@ object CvssCalculator {
                 pr = if (isTrustedCaller) "N" else "L"
             }
 
-            // Trusted caller + no suspicious receivers = 0.0
+            // Trusted caller (System/OEM/Shell) + no suspicious receivers = 0.0
             isTrustedCaller && !hasSuspiciousReceiver && !isCritical -> {
                 return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0)
             }
 
-            // Custom IPC Risk
-            !isTrustedCaller && isCustomAction && crossedBorders -> {
+            // Custom IPC Risk (Untrusted apps using unmapped actions across boundaries)
+            !isTrustedCaller && isCustomAction && (crossedBorders || hasSuspiciousReceiver) -> {
                 s = "C"; c = "H"; i = "H"
-            }
-
-            // Shell/Root activity
-            callerUid == 2000 -> {
-                s = "C"; c = "H"; i = "H"; a = "L"
             }
 
             // Critical System Events
