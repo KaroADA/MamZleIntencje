@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,13 +51,8 @@ import java.util.Locale
 
 @Composable
 fun LogListScreen(viewModel: MainViewModel) {
-    val logs = viewModel.getMockIntents()
-    val uniqueLogs = remember(logs) {
-        List(10) { iteration ->
-            logs.map { it.copy(id = "${it.id}_$iteration") }
-        }.flatten()
-    }
-    LogListContent(logs = uniqueLogs)
+    val logs by viewModel.intentRecords.collectAsState(initial = emptyList())
+    LogListContent(logs = logs)
 }
 @Composable
 fun LogListContent(logs: List<IntentRecord>, modifier: Modifier = Modifier) {
@@ -405,7 +401,7 @@ private fun parseCvssTags(vector: String): List<String> {
 @Preview(showBackground = true, name = "Log List")
 @Composable
 fun LogListPreview() {
-    val previewLogs = MainViewModel().getMockIntents()
+    val previewLogs = MainViewModel.getMockIntents()
     val uniquePreviewLogs = List(2) { iteration ->
         previewLogs.map { it.copy(id = "${it.id}_$iteration") }
     }.flatten()

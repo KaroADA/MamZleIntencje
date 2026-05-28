@@ -7,7 +7,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import com.example.mamzleintencje.data.IntentDatabase
 import com.example.mamzleintencje.monitor.IntentMonitor
 import com.example.mamzleintencje.monitor.MonitorState
 import com.example.mamzleintencje.ui.screens.MainScreen
@@ -17,7 +20,14 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private lateinit var monitor: IntentMonitor
-    private val viewModel: MainViewModel by viewModels()
+    private val viewModel: MainViewModel by viewModels {
+        object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                val dao = IntentDatabase.getDatabase(applicationContext).intentRecordDao()
+                return MainViewModel(dao) as T
+            }
+        }
+    }
     private val TAG = "UI_MAIN"
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
