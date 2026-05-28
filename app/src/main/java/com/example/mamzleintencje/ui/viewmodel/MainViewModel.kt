@@ -3,6 +3,7 @@ package com.example.mamzleintencje.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mamzleintencje.data.IntentRecord
@@ -11,17 +12,82 @@ import com.example.mamzleintencje.data.IntentType
 import com.example.mamzleintencje.monitor.MonitorState
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import androidx.core.content.edit
 
 class MainViewModel(application: Application, dao: IntentRecordDao) : AndroidViewModel(application) {
     private val sharedPrefs = application.getSharedPreferences("monitor_settings", Context.MODE_PRIVATE)
     private val _monitorState = MutableStateFlow<MonitorState>(MonitorState.Connecting)
     val monitorState = _monitorState.asStateFlow()
 
-    val intentRecords = dao.getAllRecords()
+    data class FilterState(
+        val minCvss: Double = 0.0,
+        val hideSystemApps: Boolean = false,
+        val searchQuery: String = "",
+        val allowedStatuses: Set<String> = setOf("DELIVERED", "PARTIALLY_SKIPPED", "SKIPPED", "DEFERRED"),
+        val hasExtras: Boolean = false,
+        val requiresPermission: Boolean? = null,
+        val intentType: IntentType? = null
+    )
+
+    private val _filterState = MutableStateFlow(FilterState())
+    val filterState = _filterState.asStateFlow()
+
+    // --- LOGIKA FILTROWANIA ---
+    // Łączymy wszystkie rekordy z bazy z aktualnym stanem filtrów
+    val intentRecords = combine(
+        dao.getAllRecords(),
+        _filterState
+    ) { records, filter ->
+        records.filter { record ->
+            // 1. Wyszukiwarka (szuka w nazwie akcji lub paczce)
+            val matchesSearch = filter.searchQuery.isBlank() ||
+                    record.action?.contains(filter.searchQuery, ignoreCase = true) == true ||
+                    record.callerPackage?.contains(filter.searchQuery, ignoreCase = true) == true
+
+            // 2. Ukrywanie aplikacji systemowych
+            val isSystemApp = record.callerPackage == "system_server" ||
+                    record.callerPackage?.startsWith("com.android") == true ||
+                    record.callerPackage?.startsWith("android") == true
+            val matchesSystem = if (filter.hideSystemApps) !isSystemApp else true
+
+            // 3. Poziom ryzyka (CVSS)
+            val matchesCvss = record.cvssBaseScore >= filter.minCvss
+
+            // 4. Obiekty Extras
+            val matchesExtras = if (filter.hasExtras) record.extrasSize > 0 else true
+
+            // 5. Wymagane uprawnienia
+            val matchesPermissions = when (filter.requiresPermission) {
+                true -> !record.requiredPermissions.isNullOrBlank()
+                false -> record.requiredPermissions.isNullOrBlank()
+                null -> true
+            }
+
+            // 6. Statusy dostarczenia
+            val recordStatus = record.deliveryStatus ?: "UNKNOWN"
+            val matchesStatus = filter.allowedStatuses.contains(recordStatus)
+
+            // 7. Typ Intentu - ZIGNOROWANY (zawsze zwraca true)
+            val matchesType = true
+
+            // Zwracamy rekord tylko, gdy spełnia WSZYSTKIE powyższe warunki
+            matchesSearch && matchesSystem && matchesCvss && matchesExtras && matchesPermissions && matchesStatus && matchesType
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    fun updateFilter(update: (FilterState) -> FilterState) {
+        _filterState.value = update(_filterState.value)
+        Log.d("MainViewModel", "Filter state changed: ${_filterState.value}")
+    }
 
     fun updateMonitorState(state: MonitorState) {
         _monitorState.value = state
@@ -48,6 +114,7 @@ class MainViewModel(application: Application, dao: IntentRecordDao) : AndroidVie
         )
     )
     val monitorSettings = _monitorSettings.asStateFlow()
+
     fun updateMonitorSettings(update: (MonitorSettings) -> MonitorSettings) {
         val newSettings = update(_monitorSettings.value)
         _monitorSettings.value = newSettings
@@ -55,108 +122,10 @@ class MainViewModel(application: Application, dao: IntentRecordDao) : AndroidVie
             putBoolean("work_in_background", newSettings.workInBackground)
                 .putInt("fetch_period_seconds", newSettings.fetchPeriodSeconds)
         }
-
         Log.d("MainViewModel", "Monitor settings updated and saved: $newSettings")
     }
-    data class FilterState(
-        val minCvss: Double = 0.0,
-        val hideSystemApps: Boolean = false,
-        val searchQuery: String = "",
-        val allowedStatuses: Set<String> = setOf("DELIVERED", "PARTIALLY_SKIPPED", "SKIPPED", "DEFERRED"),
-        val hasExtras: Boolean = false,
-        val requiresPermission: Boolean? = null,
-        val intentType: IntentType? = null
-    )
 
-    private val _filterState = MutableStateFlow(FilterState())
-    val filterState = _filterState.asStateFlow()
-
-    fun updateFilter(update: (FilterState) -> FilterState) {
-        _filterState.value = update(_filterState.value)
-
-        Log.d("MainViewModel", "Filter state changed: ${_filterState.value}")
-    }
     companion object {
-        fun getMockIntents(): List<IntentRecord> {
-            val now = System.currentTimeMillis()
-            return listOf(
-                IntentRecord(
-                    id = "a",
-                    timestamp = now,
-                    action = "android.intent.action.BOOT_COMPLETED",
-                    callerPackage = "com.evil.spyware.dummy",
-                    callerUid = 10999,
-                    requiredPermissions = "android.permission.RECEIVE_BOOT_COMPLETED",
-                    extrasSize = 0,
-                    extrasDump = null,
-                    dispatchTime = now + 10,
-                    finishTime = now + 250,
-                    deliveryStatus = "DELIVERED",
-                    skipReasons = null,
-                    totalReceiverCount = 1,
-                    deliveredReceivers = "com.evil.spyware.dummy",
-                    skippedReceivers = null,
-                    cvssVector = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H",
-                    cvssBaseScore = 9.3
-                ),
-                IntentRecord(
-                    id = "b",
-                    timestamp = now - 5000,
-                    action = "android.intent.action.SMS_RECEIVED",
-                    callerPackage = "com.example.flashlight",
-                    callerUid = 10245,
-                    requiredPermissions = "android.permission.RECEIVE_SMS",
-                    extrasSize = 2,
-                    extrasDump = "Bundle[{pdus=[data_bytes], format=3gpp}]",
-                    dispatchTime = now - 4995,
-                    finishTime = now - 4950,
-                    deliveryStatus = "PARTIALLY_SKIPPED",
-                    skipReasons = "Background execution not allowed",
-                    totalReceiverCount = 2,
-                    deliveredReceivers = "com.android.phone",
-                    skippedReceivers = "com.example.flashlight",
-                    cvssVector = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
-                    cvssBaseScore = 7.9
-                ),
-                IntentRecord(
-                    id = "c",
-                    timestamp = now - 15000,
-                    action = "com.example.malicious.TRIGGER_PHISHING",
-                    callerPackage = "com.example.mamzleintencje",
-                    callerUid = 10211,
-                    requiredPermissions = null,
-                    extrasSize = 1,
-                    extrasDump = "Bundle[{url=http://phishing-test.com}]",
-                    dispatchTime = now - 14999,
-                    finishTime = now - 14995,
-                    deliveryStatus = "DELIVERED",
-                    skipReasons = null,
-                    totalReceiverCount = 1,
-                    deliveredReceivers = "com.android.browser",
-                    skippedReceivers = null,
-                    cvssVector = "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N",
-                    cvssBaseScore = 6.1
-                ),
-                IntentRecord(
-                    id = "d",
-                    timestamp = now - 60000,
-                    action = "android.intent.action.SCREEN_OFF",
-                    callerPackage = "com.android.systemui",
-                    callerUid = 1000,
-                    requiredPermissions = null,
-                    extrasSize = 0,
-                    extrasDump = null,
-                    dispatchTime = now - 59998,
-                    finishTime = now - 59980,
-                    deliveryStatus = "DELIVERED",
-                    skipReasons = null,
-                    totalReceiverCount = 12,
-                    deliveredReceivers = "com.android.systemui, com.google.android.gms, com.example.mamzleintencje",
-                    skippedReceivers = null,
-                    cvssVector = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
-                    cvssBaseScore = 0.0
-                )
-            )
-        }
+        fun getMockIntents(): List<IntentRecord> = emptyList()
     }
 }

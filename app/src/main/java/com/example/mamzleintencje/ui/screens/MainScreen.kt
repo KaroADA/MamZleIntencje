@@ -4,19 +4,17 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -24,18 +22,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -47,7 +44,7 @@ import com.example.mamzleintencje.ui.viewmodel.MainViewModel
 import java.util.Locale
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
     val navController = rememberNavController()
@@ -61,16 +58,24 @@ fun MainScreen(viewModel: MainViewModel) {
     val focusManager = LocalFocusManager.current
 
     var isBottomBarVisible by remember { mutableStateOf(true) }
+    var showFilterSheet by rememberSaveable { mutableStateOf(false) }
+
+    // Check if any filter (other than search) is active to show a badge
+    val hasActiveFilters = remember(filterState) {
+        filterState.hideSystemApps ||
+                filterState.requiresPermission != null ||
+                filterState.minCvss > 0.0 ||
+                filterState.hasExtras ||
+                filterState.intentType != null ||
+                filterState.allowedStatuses.size < 4 // Assuming 4 is the total number of statuses
+    }
 
     val nestedScrollConnection = remember(currentRoute) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (currentRoute == Screen.Logs.route) {
-                    if (available.y < -10) {
-                        isBottomBarVisible = false
-                    } else if (available.y > 10) {
-                        isBottomBarVisible = true
-                    }
+                    if (available.y < -10) isBottomBarVisible = false
+                    else if (available.y > 10) isBottomBarVisible = true
                 } else {
                     isBottomBarVisible = true
                 }
@@ -85,200 +90,60 @@ fun MainScreen(viewModel: MainViewModel) {
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             if (currentRoute == Screen.Logs.route) {
+                val focusRequester = remember { FocusRequester() }
+
                 TopAppBar(
                     title = {
-                        Row(
+                        OutlinedTextField(
+                            value = filterState.searchQuery,
+                            onValueChange = { query -> viewModel.updateFilter { it.copy(searchQuery = query) } },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .layout { measurable, constraints ->
-                                    val horizontalPadding = 16.dp.roundToPx()
-                                    val placeable = measurable.measure(constraints.copy(maxWidth = constraints.maxWidth + horizontalPadding))
-                                    layout(placeable.width - horizontalPadding, placeable.height) {
-                                        placeable.placeRelative(-horizontalPadding, 0)
+                                .height(50.dp)
+                                .focusRequester(focusRequester),
+                            placeholder = { Text("Search intents...", style = MaterialTheme.typography.bodyMedium) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(20.dp)) },
+                            trailingIcon = if (filterState.searchQuery.isNotEmpty()) {
+                                {
+                                    IconButton(onClick = {
+                                        viewModel.updateFilter { it.copy(searchQuery = "") }
+                                        focusManager.clearFocus()
+                                    }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(20.dp))
                                     }
                                 }
-                                .horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            } else null,
+                            singleLine = true,
+                            shape = CircleShape,
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = Color.Transparent
+                            )
+                        )
+                    },
+                    actions = {
+                        BadgedBox(
+                            badge = {
+                                if (hasActiveFilters) {
+                                    Badge(modifier = Modifier.offset(x = (-8).dp, y = 8.dp))
+                                }
+                            }
                         ) {
-                            val checkIcon: @Composable () -> Unit = {
-                                Icon(
-                                    Icons.Default.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(FilterChipDefaults.IconSize)
-                                )
-                            }
-
-                            var isSearching by remember { mutableStateOf(false) }
-                            val focusRequester = remember { FocusRequester() }
-                            var fieldHadFocus by remember { mutableStateOf(false) }
-
-                            LaunchedEffect(isSearching) {
-                                if (isSearching) {
-                                    focusRequester.requestFocus()
-                                } else {
-                                    fieldHadFocus = false
-                                }
-                            }
-
-                            FilterChip(
-                                selected = isSearching || filterState.searchQuery.isNotEmpty(),
-                                onClick = { isSearching = true },
-                                label = {
-                                    if (isSearching) {
-                                        BasicTextField(
-                                            value = filterState.searchQuery,
-                                            onValueChange = { query -> viewModel.updateFilter { it.copy(searchQuery = query) } },
-                                            modifier = Modifier
-                                                .widthIn(min = 40.dp, max = 150.dp)
-                                                .focusRequester(focusRequester)
-                                                .onFocusChanged {
-                                                    if (it.isFocused) {
-                                                        fieldHadFocus = true
-                                                    } else if (fieldHadFocus) {
-                                                        isSearching = false
-                                                    }
-                                                },
-                                            singleLine = true,
-                                            textStyle = MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.onSurface)
-                                        )
-                                    } else {
-                                        if (filterState.searchQuery.isEmpty()) {
-                                            Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(FilterChipDefaults.IconSize))
-                                        } else {
-                                            Text(filterState.searchQuery)
-                                        }
-                                    }
-                                },
-                                trailingIcon = if (isSearching || filterState.searchQuery.isNotEmpty()) {
-                                    {
-                                        Icon(
-                                            Icons.Default.Close,
-                                            contentDescription = "Clear",
-                                            modifier = Modifier.size(FilterChipDefaults.IconSize).clickable {
-                                                viewModel.updateFilter { it.copy(searchQuery = "") }
-                                                isSearching = false
-                                            }
-                                        )
-                                    }
-                                } else null
-                            )
-
-                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
-
-                            FilterChip(
-                                selected = filterState.hideSystemApps,
-                                onClick = {
-                                    focusManager.clearFocus()
-                                    viewModel.updateFilter { it.copy(hideSystemApps = !it.hideSystemApps) }
-                                },
-                                label = { Text("Hide System") },
-                                leadingIcon = if (filterState.hideSystemApps) checkIcon else null
-                            )
-
-                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
-
-                            FilterChip(
-                                selected = filterState.requiresPermission != null,
-                                onClick = {
-                                    focusManager.clearFocus()
-                                    viewModel.updateFilter {
-                                        it.copy(requiresPermission = when (it.requiresPermission) {
-                                            null -> true
-                                            true -> false
-                                            false -> null
-                                        })
-                                    }
-                                },
-                                label = { Text("Permission") },
-                                leadingIcon = when (filterState.requiresPermission) {
-                                    true -> { { Icon(Icons.Default.Check, null, modifier = Modifier.size(FilterChipDefaults.IconSize)) } }
-                                    false -> { { Icon(Icons.Default.Close, null, modifier = Modifier.size(FilterChipDefaults.IconSize)) } }
-                                    null -> null
-                                }
-                            )
-
-                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
-
-                            FilterChip(
-                                selected = filterState.minCvss == 7.0,
-                                onClick = {
-                                    focusManager.clearFocus()
-                                    viewModel.updateFilter { it.copy(minCvss = if (it.minCvss == 7.0) 0.0 else 7.0) }
-                                },
-                                label = { Text("High Risk") },
-                                leadingIcon = if (filterState.minCvss >= 7.0) checkIcon else null
-                            )
-                            FilterChip(
-                                selected = filterState.minCvss >= 4.0 && filterState.minCvss < 7.0,
-                                onClick = {
-                                    focusManager.clearFocus()
-                                    viewModel.updateFilter { it.copy(minCvss = if (it.minCvss >= 4.0 && it.minCvss < 7.0) 0.0 else 4.0) }
-                                },
-                                label = { Text("Warnings") },
-                                leadingIcon = if (filterState.minCvss >= 4.0 && filterState.minCvss < 7.0) checkIcon else null
-                            )
-
-                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
-
-                            FilterChip(
-                                selected = filterState.hasExtras,
-                                onClick = {
-                                    focusManager.clearFocus()
-                                    viewModel.updateFilter { it.copy(hasExtras = !it.hasExtras) }
-                                },
-                                label = { Text("With Extras") },
-                                leadingIcon = if (filterState.hasExtras) checkIcon else null
-                            )
-
-                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
-
-                            IntentType.values().forEach { type ->
-                                FilterChip(
-                                    selected = filterState.intentType == type,
-                                    onClick = {
-                                        focusManager.clearFocus()
-                                        viewModel.updateFilter { it.copy(intentType = if (it.intentType == type) null else type) }
-                                    },
-                                    label = { Text(type.name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }) },
-                                    leadingIcon = if (filterState.intentType == type) checkIcon else null
-                                )
-                            }
-
-                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
-
-                            val allStatuses = listOf("DELIVERED", "PARTIALLY_SKIPPED", "SKIPPED", "DEFERRED")
-                            allStatuses.forEach { status ->
-                                FilterChip(
-                                    selected = filterState.allowedStatuses.contains(status),
-                                    onClick = {
-                                        focusManager.clearFocus()
-                                        viewModel.updateFilter {
-                                            val newSet = if (it.allowedStatuses.contains(status)) {
-                                                it.allowedStatuses - status
-                                            } else {
-                                                it.allowedStatuses + status
-                                            }
-                                            it.copy(allowedStatuses = newSet)
-                                        }
-                                    },
-                                    label = {
-                                        Text(
-                                            status.lowercase()
-                                                .replace("_", " ")
-                                                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-                                        )
-                                    },
-                                    leadingIcon = if (filterState.allowedStatuses.contains(status)) checkIcon else null
-                                )
+                            IconButton(onClick = {
+                                focusManager.clearFocus()
+                                showFilterSheet = true
+                            }) {
+                                Icon(Icons.Default.Tune, contentDescription = "Filters")
                             }
                         }
                     },
                     scrollBehavior = scrollBehavior,
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                        scrolledContainerColor = MaterialTheme.colorScheme.surface
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                        scrolledContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
                     )
                 )
             }
@@ -299,6 +164,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 NavGraph(navController = navController, viewModel = viewModel)
             }
 
+            // Bottom Navigation Overlay
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -318,31 +184,20 @@ fun MainScreen(viewModel: MainViewModel) {
 
             AnimatedVisibility(
                 visible = isBottomBarVisible,
-                enter = slideInVertically(
-                    initialOffsetY = { it },
-                    animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow)
-                ) + fadeIn(),
-                exit = slideOutVertically(
-                    targetOffsetY = { it },
-                    animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow)
-                ) + fadeOut(),
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
             ) {
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 24.dp, vertical = 32.dp)
-                ) {
+                Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 32.dp)) {
                     CustomFloatingNavBar(
                         screens = screens,
                         currentRoute = currentRoute,
                         onNavigate = { route ->
                             if (currentRoute != route) {
                                 navController.navigate(route) {
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
-                                    }
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
                                     launchSingleTop = true
                                     restoreState = true
                                 }
@@ -350,6 +205,163 @@ fun MainScreen(viewModel: MainViewModel) {
                         }
                     )
                 }
+            }
+        }
+    }
+
+    // Modal Bottom Sheet for Filters
+    if (showFilterSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showFilterSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            FilterBottomSheetContent(
+                filterState = filterState,
+                onFilterChange = { viewModel.updateFilter(it) },
+                onClearAll = {
+                    viewModel.updateFilter {
+                        it.copy(
+                            hideSystemApps = false,
+                            requiresPermission = null,
+                            minCvss = 0.0,
+                            hasExtras = false,
+                            intentType = null,
+                            allowedStatuses = setOf("DELIVERED", "PARTIALLY_SKIPPED", "SKIPPED", "DEFERRED")
+                        )
+                    }
+                }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun FilterBottomSheetContent(
+    filterState: MainViewModel.FilterState, // Adjust package if needed
+    onFilterChange: ((MainViewModel.FilterState) -> MainViewModel.FilterState) -> Unit,
+    onClearAll: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 32.dp)
+    ) {
+        // Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Filters", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            TextButton(onClick = onClearAll) {
+                Text("Clear All")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Basic Toggles
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Hide System Apps", style = MaterialTheme.typography.bodyLarge)
+            Switch(
+                checked = filterState.hideSystemApps,
+                onCheckedChange = { onFilterChange { state -> state.copy(hideSystemApps = it) } }
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Contains Extras", style = MaterialTheme.typography.bodyLarge)
+            Switch(
+                checked = filterState.hasExtras,
+                onCheckedChange = { onFilterChange { state -> state.copy(hasExtras = it) } }
+            )
+        }
+
+        Divider(modifier = Modifier.padding(vertical = 12.dp))
+
+        // Permissions
+        Text("Permissions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(null to "All", true to "Required", false to "None").forEach { (value, label) ->
+                FilterChip(
+                    selected = filterState.requiresPermission == value,
+                    onClick = { onFilterChange { it.copy(requiresPermission = value) } },
+                    label = { Text(label) }
+                )
+            }
+        }
+
+        Divider(modifier = Modifier.padding(vertical = 12.dp))
+
+        // CVSS Risk
+        Text("Vulnerability Risk", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = filterState.minCvss >= 7.0,
+                onClick = { onFilterChange { it.copy(minCvss = if (it.minCvss >= 7.0) 0.0 else 7.0) } },
+                label = { Text("High Risk (7.0+)") }
+            )
+            FilterChip(
+                selected = filterState.minCvss in 4.0..6.9,
+                onClick = { onFilterChange { it.copy(minCvss = if (it.minCvss in 4.0..6.9) 0.0 else 4.0) } },
+                label = { Text("Warnings (4.0 - 6.9)") }
+            )
+        }
+
+        Divider(modifier = Modifier.padding(vertical = 12.dp))
+
+        // Intent Types
+        Text("Intent Type", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(8.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            IntentType.entries.forEach { type ->
+                FilterChip(
+                    selected = filterState.intentType == type,
+                    onClick = { onFilterChange { it.copy(intentType = if (it.intentType == type) null else type) } },
+                    label = { Text(type.name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }) }
+                )
+            }
+        }
+
+        Divider(modifier = Modifier.padding(vertical = 12.dp))
+
+        // Delivery Status
+        Text("Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(8.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            val allStatuses = listOf("DELIVERED", "PARTIALLY_SKIPPED", "SKIPPED", "DEFERRED")
+            allStatuses.forEach { status ->
+                val isSelected = filterState.allowedStatuses.contains(status)
+                FilterChip(
+                    selected = isSelected,
+                    onClick = {
+                        onFilterChange {
+                            val newSet = if (isSelected) it.allowedStatuses - status else it.allowedStatuses + status
+                            it.copy(allowedStatuses = newSet)
+                        }
+                    },
+                    label = {
+                        Text(status.lowercase().replace("_", " ").replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() })
+                    }
+                )
             }
         }
     }
@@ -428,9 +440,9 @@ fun CustomFloatingNavBar(
                         Icon(
                             imageVector = screen.icon,
                             contentDescription = screen.title,
-                            tint = if (currentRoute == screen.route) 
-                                MaterialTheme.colorScheme.onSecondaryContainer 
-                            else 
+                            tint = if (currentRoute == screen.route)
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            else
                                 MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(26.dp)
                         )
