@@ -1,5 +1,7 @@
 package com.example.mamzleintencje
 
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -9,24 +11,34 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
 import com.example.mamzleintencje.monitor.IntentMonitor
+import com.example.mamzleintencje.monitor.MonitorService
 import com.example.mamzleintencje.monitor.MonitorState
 import com.example.mamzleintencje.ui.screens.MainScreen
 import com.example.mamzleintencje.ui.theme.MamZłeIntencjeTheme
 import com.example.mamzleintencje.ui.viewmodel.MainViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private lateinit var monitor: IntentMonitor
     private val viewModel: MainViewModel by viewModels()
     private val TAG = "UI_MAIN"
+    private var localTimerJob: Job? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
         setupMonitor()
 
         lifecycleScope.launch {
+            viewModel.monitorSettings.collect { settings ->
+                manageScanningLifecycle(settings)
+            }
+        }
+        lifecycleScope.launch {
             viewModel.restartSignal.collect {
                 monitor.destroy()
+                delay(500)
                 setupMonitor()
             }
         }
@@ -50,6 +62,30 @@ class MainActivity : ComponentActivity() {
             }
         }
         monitor.start()
+    }
+    private fun manageScanningLifecycle(settings: MainViewModel.MonitorSettings) {
+        val intent = Intent(this, MonitorService::class.java).apply {
+            putExtra("PERIOD_SECONDS", settings.fetchPeriodSeconds)
+        }
+
+        if (settings.workInBackground) {
+            localTimerJob?.cancel()
+            startForegroundService(intent)
+        } else {
+            stopService(intent)
+            startLocalTimerLoop(settings.fetchPeriodSeconds)
+        }
+    }
+
+    private fun startLocalTimerLoop(periodSeconds: Int) {
+        localTimerJob?.cancel()
+        localTimerJob = lifecycleScope.launch {
+            while (true) {
+                Log.d("Local", "scan")
+                monitor.triggerScan()
+                delay(periodSeconds * 1000L)
+            }
+        }
     }
 
     // TODO: coś w UI zamiast logów

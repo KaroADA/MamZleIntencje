@@ -59,9 +59,6 @@ class IntentMonitor(
                 }
                 Log.d(TAG, "${lines.size} lines to process.")
                 val records = parseLines(lines)
-                for (record in records) {
-                    Log.d(TAG, "$record")
-                }
                 if (records.isNotEmpty()) {
                     intentDatabase.intentRecordDao().insertAll(records)
                     Log.d(TAG, "Processed ${records.size} records.")

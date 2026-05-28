@@ -41,7 +41,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.mamzleintencje.data.IntentRecord
-import com.example.mamzleintencje.data.IntentType
 import com.example.mamzleintencje.ui.theme.MamZłeIntencjeTheme
 import com.example.mamzleintencje.ui.viewmodel.MainViewModel
 import java.text.SimpleDateFormat
@@ -50,7 +49,7 @@ import java.util.Locale
 
 @Composable
 fun LogListScreen(viewModel: MainViewModel) {
-    val logs = viewModel.getMockIntents()
+    val logs = MainViewModel.getMockIntents()
     val uniqueLogs = remember(logs) {
         List(10) { iteration ->
             logs.map { it.copy(id = "${it.id}_$iteration") }
@@ -405,7 +404,7 @@ private fun parseCvssTags(vector: String): List<String> {
 @Preview(showBackground = true, name = "Log List")
 @Composable
 fun LogListPreview() {
-    val previewLogs = MainViewModel().getMockIntents()
+    val previewLogs = MainViewModel.getMockIntents()
     val uniquePreviewLogs = List(2) { iteration ->
         previewLogs.map { it.copy(id = "${it.id}_$iteration") }
     }.flatten()

@@ -9,6 +9,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -19,6 +22,7 @@ import com.example.mamzleintencje.ui.viewmodel.MainViewModel
 @Composable
 fun SettingsScreen(viewModel: MainViewModel) {
     val monitorState by viewModel.monitorState.collectAsState()
+    val settings by viewModel.monitorSettings.collectAsState()
 
     Column(
         modifier = Modifier
@@ -72,6 +76,56 @@ fun SettingsScreen(viewModel: MainViewModel) {
                     )
                     Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                     Text("Restart Shizuku Connection")
+                }
+            }
+        }
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Work in Background", style = MaterialTheme.typography.bodyLarge)
+                    Switch(
+                        checked = settings.workInBackground,
+                        onCheckedChange = { isChecked ->
+                            viewModel.updateMonitorSettings { it.copy(workInBackground = isChecked) }
+                        }
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Fetch Period (seconds)", style = MaterialTheme.typography.bodyLarge)
+
+                    var textValue by remember(settings.fetchPeriodSeconds) {
+                        mutableStateOf(settings.fetchPeriodSeconds.toString())
+                    }
+
+                    OutlinedTextField(
+                        value = textValue,
+                        onValueChange = { newValue ->
+                            textValue = newValue
+                            val seconds = newValue.toIntOrNull() ?: 30
+                            viewModel.updateMonitorSettings { it.copy(fetchPeriodSeconds = seconds) }
+                        },
+                        modifier = Modifier.width(100.dp),
+                        singleLine = true
+                    )
                 }
             }
         }

@@ -59,6 +59,7 @@ class ShizukuClient(
         if (userService != null) {
             val serviceArgs = Shizuku.UserServiceArgs(ComponentName(context.packageName, UserService::class.java.name))
             Shizuku.unbindUserService(serviceArgs, serviceConnection, true)
+            userService = null
         }
     }
 
