@@ -19,6 +19,8 @@ interface IntentRecordDao {
     fun getAllRecords(): Flow<List<IntentRecord>>
     @Query("SELECT * FROM intent_records WHERE id = :id LIMIT 1")
     suspend fun getRecordById(id: String): IntentRecord?
+    @Query("UPDATE intent_records SET wasSeen = 1 WHERE id = :id")
+    suspend fun markAsSeen(id: String): Int
 
     @Query("""
         SELECT * FROM intent_records 

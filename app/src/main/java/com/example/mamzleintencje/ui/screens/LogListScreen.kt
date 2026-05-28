@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -53,10 +54,18 @@ import androidx.compose.ui.platform.LocalLocale
 @Composable
 fun LogListScreen(viewModel: MainViewModel) {
     val logs by viewModel.intentRecords.collectAsState(initial = emptyList())
-    LogListContent(logs = logs)
+    LogListContent(
+        logs = logs,
+        onItemClick = { id -> viewModel.markAsSeen(id) }
+    )
 }
+
 @Composable
-fun LogListContent(logs: List<IntentRecord>, modifier: Modifier = Modifier) {
+fun LogListContent(
+    logs: List<IntentRecord>,
+    modifier: Modifier = Modifier,
+    onItemClick: ((String) -> Unit)? = null
+) {
     var expandedId by rememberSaveable { mutableStateOf<String?>(null) }
 
     LazyColumn(
@@ -69,6 +78,7 @@ fun LogListContent(logs: List<IntentRecord>, modifier: Modifier = Modifier) {
                 expanded = expandedId == log.id,
                 onExpandToggle = {
                     expandedId = if (expandedId == log.id) null else log.id
+                    onItemClick?.invoke(log.id)
                 }
             )
         }
@@ -111,75 +121,90 @@ fun IntentLogCard(
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor)
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = record.action?.substringAfterLast(".") ?: "UNKNOWN_ACTION",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+        // Wrap the inner Column in a Box to allow absolute positioning of the dot
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = record.callerPackage ?: "system_server",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = record.action?.substringAfterLast(".") ?: "UNKNOWN_ACTION",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
+                            overflow = TextOverflow.Ellipsis
                         )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = record.callerPackage ?: "system_server",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Text(
+                                text = " • $timeString",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .background(colorSchemeAccent, RoundedCornerShape(12.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = String.format(LocalLocale.current.platformLocale, "%.1f", record.cvssBaseScore),
+                                color = Color.White,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = " • $timeString",
+                            text = labelText,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline,
-                            fontFamily = FontFamily.Monospace
+                            fontWeight = FontWeight.Bold,
+                            color = colorSchemeAccent
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier
-                            .background(colorSchemeAccent, RoundedCornerShape(12.dp))
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = String.format(LocalLocale.current.platformLocale, "%.1f", record.cvssBaseScore),
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = labelText,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = colorSchemeAccent
-                    )
+                if (expanded) {
+                    ExpandedContent(record)
                 }
             }
 
-            if (expanded) {
-                ExpandedContent(record)
+            if (!record.wasSeen && record.cvssBaseScore > 7.0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 8.dp, top = 8.dp)
+                        .size(6.dp)
+                        .background(
+                            color = colorSchemeAccent,
+                            shape = CircleShape
+                        )
+                )
             }
         }
     }
 }
-
 @Composable
 fun ExpandedContent(record: IntentRecord) {
     HorizontalDivider(

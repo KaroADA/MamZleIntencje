@@ -73,7 +73,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val nestedScrollConnection = remember(currentRoute) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (currentRoute == Screen.Logs.route) {
+                if (currentRoute == Screen.Logs.route || currentRoute == Screen.Settings.route) {
                     if (available.y < -10) isBottomBarVisible = false
                     else if (available.y > 10) isBottomBarVisible = true
                 } else {

@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class MainViewModel(application: Application, dao: IntentRecordDao) : AndroidViewModel(application) {
+class MainViewModel(application: Application, private val dao: IntentRecordDao) : AndroidViewModel(application) {
     private val sharedPrefs = application.getSharedPreferences("monitor_settings", Context.MODE_PRIVATE)
     private val _monitorState = MutableStateFlow<MonitorState>(MonitorState.Connecting)
     val monitorState = _monitorState.asStateFlow()
@@ -58,6 +58,24 @@ class MainViewModel(application: Application, dao: IntentRecordDao) : AndroidVie
     fun updateFilter(update: (FilterState) -> FilterState) {
         _filterState.value = update(_filterState.value)
         Log.d("MainViewModel", "Filter state changed: ${_filterState.value}")
+    }
+    fun markAsSeen(id: String) {
+        viewModelScope.launch {
+            try {
+                dao.markAsSeen(id)
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to mark record as seen in DB", e)
+            }
+        }
+    }
+    fun clearDatabase() {
+        viewModelScope.launch {
+            try {
+                dao.deleteAll()
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Failed to clear intent record database", e)
+            }
+        }
     }
 
     fun updateMonitorState(state: MonitorState) {

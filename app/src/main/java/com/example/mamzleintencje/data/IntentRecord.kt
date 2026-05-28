@@ -7,6 +7,7 @@ import androidx.room.PrimaryKey
 data class IntentRecord(
     @PrimaryKey
     val id: String,                  // SHA-256 hash of unique properties to prevent duplicates
+    val wasSeen: Boolean = false,
 
     val timestamp: Long,
     val action: String?,
