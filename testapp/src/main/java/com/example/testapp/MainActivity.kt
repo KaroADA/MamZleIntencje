@@ -40,8 +40,21 @@ class MainActivity : ComponentActivity() {
 
         Shizuku.addRequestPermissionResultListener { requestCode, grantResult ->
             if (requestCode == SHIZUKU_CODE && grantResult == PackageManager.PERMISSION_GRANTED) {
-                Log.i("IntentGen", "Uprawnienia Shizuku zostały przyznane.")
+                Log.i("IntentGen", "Uprawnienia Shizuku zostały przyznane!")
+            } else {
+                Log.e("IntentGen", "Odmowa uprawnień Shizuku.")
             }
+        }
+
+        if (Shizuku.pingBinder()) {
+            if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                Log.w("IntentGen", "Brak uprawnień Shizuku. Wysyłam prośbę do użytkownika...")
+                Shizuku.requestPermission(SHIZUKU_CODE)
+            } else {
+                Log.i("IntentGen", "Shizuku jest gotowe do pracy.")
+            }
+        } else {
+            Log.e("IntentGen", "Serwer Shizuku nie działa w systemie!")
         }
 
         setContent {
@@ -105,9 +118,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun executeShellCommand(command: String) {
-        if (!Shizuku.pingBinder()) return
+        if (!Shizuku.pingBinder()) {
+            Log.e("IntentGen", "Shizuku nie jest aktywne lub połączone!")
+            return
+        }
 
-        // Uruchomienie w wątku tła (IO)
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val newProcessMethod = Shizuku::class.java.getDeclaredMethod(
@@ -125,10 +140,23 @@ class MainActivity : ComponentActivity() {
                     null
                 ) as Process
 
-                process.waitFor()
-                Log.i("IntentGen", "Wykonano komendę systemową: $command")
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(process.inputStream))
+                val errorReader = java.io.BufferedReader(java.io.InputStreamReader(process.errorStream))
+
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    Log.d("IntentGen", "STDOUT: $line")
+                }
+                while (errorReader.readLine().also { line = it } != null) {
+                    Log.e("IntentGen", "STDERR: $line")
+                }
+
+                val exitCode = process.waitFor()
+                Log.i("IntentGen", "Komenda zakończona z kodem: $exitCode -> $command")
+
             } catch (e: Exception) {
-                Log.e("IntentGen", "Błąd wywołania komendy przez Shizuku: ${e.message}")
+                val cause = if (e is java.lang.reflect.InvocationTargetException) e.targetException else e
+                Log.e("IntentGen", "Błąd wywołania komendy przez Shizuku: ", cause)
             }
         }
     }
@@ -227,6 +255,24 @@ class MainActivity : ComponentActivity() {
                 Text("Wyślij TEST_EVENT (Statyczny)")
             }
             Text("Nasłuch wykrywa również DEVICE_ADMIN_ENABLED, BOOT_COMPLETED, PACKAGE_ADDED", style = androidx.compose.material3.MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+
+            Text("4. Broadcast", fontWeight = FontWeight.Bold, color = Color.Magenta, modifier = Modifier.padding(bottom = 8.dp))
+
+            Button(onClick = {
+                // Tworzymy intencję, która leci prosto do rdzenia systemu (w tło)
+                val intent = Intent("com.example.testapp.ATAK_TESTOWY")
+
+                // Dodajemy payload (żeby Twój skaner wykrył flagę 'has extras' i podbił CVSS)
+                intent.putExtra("tajny_token", "super_tajne_haslo_123")
+                intent.putExtra("id_ofiary", 997)
+
+                // Wysłanie w eter - to trafia do ActivityManagerService i zostaje w historii!
+                sendBroadcast(intent)
+
+                Log.i("IntentGen", "Wysłano złośliwy broadcast w tło!")
+            }, modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                Text("Zostaw ślad w systemie (sendBroadcast)")
+            }
 
         }
     }
