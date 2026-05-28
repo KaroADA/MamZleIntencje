@@ -55,6 +55,54 @@ class MainViewModel(application: Application, private val dao: IntentRecordDao) 
         initialValue = emptyList()
     )
 
+    val maxCvssScore = dao.getMaxCvssScore().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0.0
+    )
+
+    val criticalCount = dao.getCriticalCount().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0
+    )
+
+    val mediumCount = dao.getMediumCount().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0
+    )
+
+    val lowCount = dao.getLowCount().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0
+    )
+
+    val totalCount = dao.getTotalCount().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0
+    )
+
+    val suspiciousCount = dao.getSuspiciousCount().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = 0
+    )
+
+    val topDangerousPackages = dao.getTopDangerousPackages().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    val recentSuspiciousIntents = dao.getRecentSuspiciousIntents().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
     fun updateFilter(update: (FilterState) -> FilterState) {
         _filterState.value = update(_filterState.value)
         Log.d("MainViewModel", "Filter state changed: ${_filterState.value}")

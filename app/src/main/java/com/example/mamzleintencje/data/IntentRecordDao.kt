@@ -54,4 +54,39 @@ interface IntentRecordDao {
     @Query("DELETE FROM intent_records")
     suspend fun deleteAll(): Int
 
+    @Query("SELECT MAX(cvssBaseScore) FROM intent_records")
+    fun getMaxCvssScore(): Flow<Double?>
+
+    @Query("SELECT COUNT(*) FROM intent_records WHERE cvssBaseScore >= 7.0")
+    fun getCriticalCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM intent_records WHERE cvssBaseScore >= 3.0 AND cvssBaseScore < 7.0")
+    fun getMediumCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM intent_records WHERE cvssBaseScore < 3.0")
+    fun getLowCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM intent_records")
+    fun getTotalCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM intent_records WHERE cvssBaseScore > 0")
+    fun getSuspiciousCount(): Flow<Int>
+
+    data class PackageRisk(
+        val callerPackage: String?,
+        val maxScore: Double,
+        val intentCount: Int
+    )
+
+    @Query("""
+        SELECT callerPackage, MAX(cvssBaseScore) as maxScore, COUNT(*) as intentCount 
+        FROM intent_records 
+        GROUP BY callerPackage 
+        ORDER BY maxScore DESC 
+        LIMIT 5
+    """)
+    fun getTopDangerousPackages(): Flow<List<PackageRisk>>
+
+    @Query("SELECT * FROM intent_records WHERE cvssBaseScore > 0 ORDER BY timestamp DESC LIMIT 3")
+    fun getRecentSuspiciousIntents(): Flow<List<IntentRecord>>
 }

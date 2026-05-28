@@ -84,7 +84,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 source: NestedScrollSource
             ): Offset {
                 // Hide bar ONLY if content actually scrolls up
-                if (consumed.y < -10 && (currentRoute == Screen.Logs.route || currentRoute == Screen.Settings.route)) {
+                if (consumed.y < -10 && (currentRoute == Screen.Logs.route || currentRoute == Screen.Settings.route || currentRoute == Screen.Dashboard.route)) {
                     isBottomBarVisible = false
                 }
                 return Offset.Zero
