@@ -5,8 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 
-class StaticMalwareReceiver : BroadcastReceiver() {
+class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        Log.e("IntentGen", "Static malware caught: ${intent.action}")
+        Log.d("IntentMonitor", "AlarmReceiver caught: ${intent.action}")
     }
 }
