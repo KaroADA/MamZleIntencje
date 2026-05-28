@@ -10,8 +10,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -29,13 +35,16 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.mamzleintencje.data.IntentType
 import com.example.mamzleintencje.ui.navigation.NavGraph
 import com.example.mamzleintencje.ui.navigation.Screen
 import com.example.mamzleintencje.ui.viewmodel.MainViewModel
+import java.util.Locale
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,6 +58,7 @@ fun MainScreen(viewModel: MainViewModel) {
 
     val filterState by viewModel.filterState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    val focusManager = LocalFocusManager.current
 
     var isBottomBarVisible by remember { mutableStateOf(true) }
 
@@ -100,9 +110,69 @@ fun MainScreen(viewModel: MainViewModel) {
                                 )
                             }
 
+                            var isSearching by remember { mutableStateOf(false) }
+                            val focusRequester = remember { FocusRequester() }
+                            var fieldHadFocus by remember { mutableStateOf(false) }
+
+                            LaunchedEffect(isSearching) {
+                                if (isSearching) {
+                                    focusRequester.requestFocus()
+                                } else {
+                                    fieldHadFocus = false
+                                }
+                            }
+
+                            FilterChip(
+                                selected = isSearching || filterState.searchQuery.isNotEmpty(),
+                                onClick = { isSearching = true },
+                                label = {
+                                    if (isSearching) {
+                                        BasicTextField(
+                                            value = filterState.searchQuery,
+                                            onValueChange = { query -> viewModel.updateFilter { it.copy(searchQuery = query) } },
+                                            modifier = Modifier
+                                                .widthIn(min = 40.dp, max = 150.dp)
+                                                .focusRequester(focusRequester)
+                                                .onFocusChanged {
+                                                    if (it.isFocused) {
+                                                        fieldHadFocus = true
+                                                    } else if (fieldHadFocus) {
+                                                        isSearching = false
+                                                    }
+                                                },
+                                            singleLine = true,
+                                            textStyle = MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.onSurface)
+                                        )
+                                    } else {
+                                        if (filterState.searchQuery.isEmpty()) {
+                                            Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(FilterChipDefaults.IconSize))
+                                        } else {
+                                            Text(filterState.searchQuery)
+                                        }
+                                    }
+                                },
+                                trailingIcon = if (isSearching || filterState.searchQuery.isNotEmpty()) {
+                                    {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Clear",
+                                            modifier = Modifier.size(FilterChipDefaults.IconSize).clickable {
+                                                viewModel.updateFilter { it.copy(searchQuery = "") }
+                                                isSearching = false
+                                            }
+                                        )
+                                    }
+                                } else null
+                            )
+
+                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
+
                             FilterChip(
                                 selected = filterState.hideSystemApps,
-                                onClick = { viewModel.updateFilter { it.copy(hideSystemApps = !it.hideSystemApps) } },
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    viewModel.updateFilter { it.copy(hideSystemApps = !it.hideSystemApps) }
+                                },
                                 label = { Text("Hide System") },
                                 leadingIcon = if (filterState.hideSystemApps) checkIcon else null
                             )
@@ -110,35 +180,97 @@ fun MainScreen(viewModel: MainViewModel) {
                             VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
 
                             FilterChip(
+                                selected = filterState.requiresPermission != null,
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    viewModel.updateFilter {
+                                        it.copy(requiresPermission = when (it.requiresPermission) {
+                                            null -> true
+                                            true -> false
+                                            false -> null
+                                        })
+                                    }
+                                },
+                                label = { Text("Permission") },
+                                leadingIcon = when (filterState.requiresPermission) {
+                                    true -> { { Icon(Icons.Default.Check, null, modifier = Modifier.size(FilterChipDefaults.IconSize)) } }
+                                    false -> { { Icon(Icons.Default.Close, null, modifier = Modifier.size(FilterChipDefaults.IconSize)) } }
+                                    null -> null
+                                }
+                            )
+
+                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
+
+                            FilterChip(
                                 selected = filterState.minCvss == 7.0,
-                                onClick = { viewModel.updateFilter { it.copy(minCvss = if (it.minCvss == 7.0) null else 7.0) } },
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    viewModel.updateFilter { it.copy(minCvss = if (it.minCvss == 7.0) 0.0 else 7.0) }
+                                },
                                 label = { Text("High Risk") },
-                                leadingIcon = if (filterState.minCvss == 7.0) checkIcon else null
+                                leadingIcon = if (filterState.minCvss >= 7.0) checkIcon else null
                             )
                             FilterChip(
-                                selected = filterState.minCvss == 4.0,
-                                onClick = { viewModel.updateFilter { it.copy(minCvss = if (it.minCvss == 4.0) null else 4.0) } },
+                                selected = filterState.minCvss >= 4.0 && filterState.minCvss < 7.0,
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    viewModel.updateFilter { it.copy(minCvss = if (it.minCvss >= 4.0 && it.minCvss < 7.0) 0.0 else 4.0) }
+                                },
                                 label = { Text("Warnings") },
-                                leadingIcon = if (filterState.minCvss == 4.0) checkIcon else null
+                                leadingIcon = if (filterState.minCvss >= 4.0 && filterState.minCvss < 7.0) checkIcon else null
                             )
 
                             VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
 
                             FilterChip(
                                 selected = filterState.hasExtras,
-                                onClick = { viewModel.updateFilter { it.copy(hasExtras = !it.hasExtras) } },
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    viewModel.updateFilter { it.copy(hasExtras = !it.hasExtras) }
+                                },
                                 label = { Text("With Extras") },
                                 leadingIcon = if (filterState.hasExtras) checkIcon else null
                             )
 
                             VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
 
-                            listOf("Broadcast", "Activity", "Service").forEach { type ->
+                            IntentType.values().forEach { type ->
                                 FilterChip(
                                     selected = filterState.intentType == type,
-                                    onClick = { viewModel.updateFilter { it.copy(intentType = if (it.intentType == type) null else type) } },
-                                    label = { Text(type) },
+                                    onClick = {
+                                        focusManager.clearFocus()
+                                        viewModel.updateFilter { it.copy(intentType = if (it.intentType == type) null else type) }
+                                    },
+                                    label = { Text(type.name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }) },
                                     leadingIcon = if (filterState.intentType == type) checkIcon else null
+                                )
+                            }
+
+                            VerticalDivider(modifier = Modifier.height(24.dp).padding(horizontal = 4.dp))
+
+                            val allStatuses = listOf("DELIVERED", "PARTIALLY_SKIPPED", "SKIPPED", "DEFERRED")
+                            allStatuses.forEach { status ->
+                                FilterChip(
+                                    selected = filterState.allowedStatuses.contains(status),
+                                    onClick = {
+                                        focusManager.clearFocus()
+                                        viewModel.updateFilter {
+                                            val newSet = if (it.allowedStatuses.contains(status)) {
+                                                it.allowedStatuses - status
+                                            } else {
+                                                it.allowedStatuses + status
+                                            }
+                                            it.copy(allowedStatuses = newSet)
+                                        }
+                                    },
+                                    label = {
+                                        Text(
+                                            status.lowercase()
+                                                .replace("_", " ")
+                                                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+                                        )
+                                    },
+                                    leadingIcon = if (filterState.allowedStatuses.contains(status)) checkIcon else null
                                 )
                             }
                         }
@@ -158,6 +290,11 @@ fun MainScreen(viewModel: MainViewModel) {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(top = innerPadding.calculateTopPadding())
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { focusManager.clearFocus() }
+                    )
             ) {
                 NavGraph(navController = navController, viewModel = viewModel)
             }

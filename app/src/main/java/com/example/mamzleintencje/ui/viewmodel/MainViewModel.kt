@@ -30,10 +30,13 @@ class MainViewModel : ViewModel() {
     }
 
     data class FilterState(
-        val minCvss: Double? = null,
-        val intentType: String? = null,
+        val minCvss: Double = 0.0,
+        val hideSystemApps: Boolean = false,
+        val searchQuery: String = "",
+        val allowedStatuses: Set<String> = setOf("DELIVERED", "PARTIALLY_SKIPPED", "SKIPPED", "DEFERRED"),
         val hasExtras: Boolean = false,
-        val hideSystemApps: Boolean = false
+        val requiresPermission: Boolean? = null,
+        val intentType: IntentType? = null
     )
 
     private val _filterState = MutableStateFlow(FilterState())
