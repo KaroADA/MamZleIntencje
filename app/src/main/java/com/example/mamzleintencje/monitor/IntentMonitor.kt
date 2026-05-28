@@ -1,7 +1,14 @@
 package com.example.mamzleintencje.monitor
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import com.example.mamzleintencje.MainActivity
 import com.example.mamzleintencje.data.IntentDatabase
 import com.example.mamzleintencje.data.IntentRecord
 import kotlinx.coroutines.CoroutineScope
@@ -59,9 +66,23 @@ class IntentMonitor(
                 }
                 Log.d(TAG, "${lines.size} lines to process.")
                 val records = parseLines(lines)
+                var triggeredAlert = false
+
+                for (record in records) {
+                    val exists = intentDatabase.intentRecordDao().getRecordById(record.id) != null
+                    if (!exists) {
+                        if (record.cvssBaseScore >= 7.0) {
+                            triggeredAlert = true
+                        }
+                    }
+                }
                 if (records.isNotEmpty()) {
                     intentDatabase.intentRecordDao().insertAll(records)
                     Log.d(TAG, "Processed ${records.size} records.")
+                }
+                if (triggeredAlert) {
+                    Log.d(TAG, "SUS")
+                    sendNotification()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error executing dumpsys scan", e)
@@ -288,6 +309,40 @@ class IntentMonitor(
             }
         }
         return res
+    }
+    private fun sendNotification() {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val channelId = "security_alerts_channel"
+
+        val channel = NotificationChannel(
+            channelId,
+            "Security Alerts",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Vague alerts for suspicious background activity"
+        }
+        notificationManager.createNotificationChannel(channel)
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setContentTitle("Security Notification")
+            .setContentText("Suspicious system activity detected. Tap to review.")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(3003, notification)
     }
 
     companion object {

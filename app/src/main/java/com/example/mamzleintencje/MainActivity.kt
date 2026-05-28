@@ -39,6 +39,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         
         setupMonitor()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+        }
 
         lifecycleScope.launch {
             viewModel.monitorSettings.collect { settings ->

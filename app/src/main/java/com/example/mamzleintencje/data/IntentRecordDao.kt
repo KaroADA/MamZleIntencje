@@ -17,6 +17,8 @@ interface IntentRecordDao {
 
     @Query("SELECT * FROM intent_records ORDER BY timestamp DESC")
     fun getAllRecords(): Flow<List<IntentRecord>>
+    @Query("SELECT * FROM intent_records WHERE id = :id LIMIT 1")
+    suspend fun getRecordById(id: String): IntentRecord?
 
     @Query("""
         SELECT * FROM intent_records 
