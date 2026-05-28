@@ -2,6 +2,7 @@ package com.example.mamzleintencje.monitor
 
 import kotlin.math.ceil
 import kotlin.math.pow
+import java.util.Locale
 
 class CvssCalculator {
 
@@ -72,26 +73,20 @@ class CvssCalculator {
             val isPersistenceAction = PERSISTENCE_ACTIONS.any { action?.contains(it) ?: false }
             val isInformationalAction = INFORMATIONAL_ACTIONS.any { action?.contains(it) ?: false }
 
-            val isSystemAction = action?.startsWith("android.") == true ||
-                    action?.startsWith("com.android.") == true ||
-                    PERSISTENCE_ACTIONS.contains(action) ||
-                    INFORMATIONAL_ACTIONS.contains(action)
-
-            val isCustomAction = action != null && !isSystemAction
-
-            val deliveredList = deliveredReceivers?.split(", ")?.map { it.trim() } ?: emptyList()
+            val deliveredList = deliveredReceivers?.split(",")?.map { it.trim() } ?: emptyList()
             val hasUntrustedReceiver = deliveredList.any { receiver ->
                 val receiverPkg = extractPackage(receiver)
                 !isTrustedPackage(receiverPkg)
             }
 
-            val isSuspicious = isCustomAction && hasUntrustedReceiver
+            val isCustomAction = action != null && !action.startsWith("android.") && !action.startsWith("com.android.")
+            val isSuspicious = !isTrustedCaller && (isCustomAction || callerUid == 2000)
 
             if (isInformationalAction) {
                 return CvssResult("CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0)
             }
 
-            if (extrasSize == 0 && !isSuspicious && !(isPersistenceAction && hasUntrustedReceiver)) {
+            if (extrasSize == 0 && !isSuspicious && !isPersistenceAction) {
                 return CvssResult("CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0)
             }
 
@@ -125,8 +120,7 @@ class CvssCalculator {
                     }
                 }
                 isPersistenceAction -> {
-                    c = "N"
-                    i = if (hasUntrustedReceiver) "L" else "N"
+                    i = if (!isTrustedCaller && hasUntrustedReceiver) "L" else "N"
                 }
                 isTrustedCaller -> {
                     if (hasUntrustedReceiver && extrasSize > 0) {
@@ -181,6 +175,8 @@ class CvssCalculator {
             }
         }
 
-        private fun roundup(input: Double): Double = ceil(input * 10.0) / 10.0
+        private fun roundup(input: Double): Double {
+            return kotlin.math.ceil(input * 10.0) / 10.0
+        }
     }
 }
