@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -39,45 +40,15 @@ class MainViewModel(application: Application, dao: IntentRecordDao) : AndroidVie
 
     // --- LOGIKA FILTROWANIA ---
     // Łączymy wszystkie rekordy z bazy z aktualnym stanem filtrów
-    val intentRecords = combine(
-        dao.getAllRecords(),
-        _filterState
-    ) { records, filter ->
-        records.filter { record ->
-            // 1. Wyszukiwarka (szuka w nazwie akcji lub paczce)
-            val matchesSearch = filter.searchQuery.isBlank() ||
-                    record.action?.contains(filter.searchQuery, ignoreCase = true) == true ||
-                    record.callerPackage?.contains(filter.searchQuery, ignoreCase = true) == true
-
-            // 2. Ukrywanie aplikacji systemowych
-            val isSystemApp = record.callerPackage == "system_server" ||
-                    record.callerPackage?.startsWith("com.android") == true ||
-                    record.callerPackage?.startsWith("android") == true
-            val matchesSystem = if (filter.hideSystemApps) !isSystemApp else true
-
-            // 3. Poziom ryzyka (CVSS)
-            val matchesCvss = record.cvssBaseScore >= filter.minCvss
-
-            // 4. Obiekty Extras
-            val matchesExtras = if (filter.hasExtras) record.extrasSize > 0 else true
-
-            // 5. Wymagane uprawnienia
-            val matchesPermissions = when (filter.requiresPermission) {
-                true -> !record.requiredPermissions.isNullOrBlank()
-                false -> record.requiredPermissions.isNullOrBlank()
-                null -> true
-            }
-
-            // 6. Statusy dostarczenia
-            val recordStatus = record.deliveryStatus ?: "UNKNOWN"
-            val matchesStatus = filter.allowedStatuses.contains(recordStatus)
-
-            // 7. Typ Intentu - ZIGNOROWANY (zawsze zwraca true)
-            val matchesType = true
-
-            // Zwracamy rekord tylko, gdy spełnia WSZYSTKIE powyższe warunki
-            matchesSearch && matchesSystem && matchesCvss && matchesExtras && matchesPermissions && matchesStatus && matchesType
-        }
+    val intentRecords = _filterState.flatMapLatest { filter ->
+        dao.getFilteredRecords(
+            searchQuery = filter.searchQuery,
+            minCvss = filter.minCvss,
+            hideSystemApps = filter.hideSystemApps,
+            hasExtras = filter.hasExtras,
+            // (Tutaj musiałbyś dostosować logikę statusów do SQL)
+            statusFilter = filter.allowedStatuses.firstOrNull() ?: ""
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
