@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.mamzleintencje.data.IntentType
 import com.example.mamzleintencje.ui.navigation.NavGraph
 import com.example.mamzleintencje.ui.navigation.Screen
 import com.example.mamzleintencje.ui.viewmodel.MainViewModel
@@ -66,13 +65,13 @@ fun MainScreen(viewModel: MainViewModel) {
                 filterState.requiresPermission != null ||
                 filterState.minCvss > 0.0 ||
                 filterState.hasExtras ||
-                filterState.intentType != null ||
                 filterState.allowedStatuses.size < 4 // Assuming 4 is the total number of statuses
     }
 
-    val nestedScrollConnection = remember(currentRoute) {
+    val nestedScrollConnection = remember(currentRoute, showFilterSheet) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (showFilterSheet) return Offset.Zero
                 // Show bar when pulling down, regardless of if content scrolls
                 if (available.y > 10) isBottomBarVisible = true
                 return Offset.Zero
@@ -83,6 +82,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 available: Offset,
                 source: NestedScrollSource
             ): Offset {
+                if (showFilterSheet) return Offset.Zero
                 // Hide bar ONLY if content actually scrolls up
                 if (consumed.y < -10 && (currentRoute == Screen.Logs.route || currentRoute == Screen.Settings.route || currentRoute == Screen.Dashboard.route)) {
                     isBottomBarVisible = false
@@ -238,7 +238,6 @@ fun MainScreen(viewModel: MainViewModel) {
                             requiresPermission = null,
                             minCvss = 0.0,
                             hasExtras = false,
-                            intentType = null,
                             allowedStatuses = setOf("DELIVERED", "PARTIALLY_SKIPPED", "SKIPPED", "DEFERRED")
                         )
                     }
@@ -300,7 +299,7 @@ fun FilterBottomSheetContent(
             )
         }
 
-        Divider(modifier = Modifier.padding(vertical = 12.dp))
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
         // Permissions
         Text("Permissions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -315,7 +314,7 @@ fun FilterBottomSheetContent(
             }
         }
 
-        Divider(modifier = Modifier.padding(vertical = 12.dp))
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
         // CVSS Risk
         Text("Vulnerability Risk", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -333,25 +332,7 @@ fun FilterBottomSheetContent(
             )
         }
 
-        Divider(modifier = Modifier.padding(vertical = 12.dp))
-
-        // Intent Types
-        Text("Intent Type", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Spacer(modifier = Modifier.height(8.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
-        ) {
-            IntentType.entries.forEach { type ->
-                FilterChip(
-                    selected = filterState.intentType == type,
-                    onClick = { onFilterChange { it.copy(intentType = if (it.intentType == type) null else type) } },
-                    label = { Text(type.name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }) }
-                )
-            }
-        }
-
-        Divider(modifier = Modifier.padding(vertical = 12.dp))
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
         // Delivery Status
         Text("Status", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

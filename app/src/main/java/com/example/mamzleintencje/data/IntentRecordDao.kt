@@ -40,6 +40,7 @@ interface IntentRecordDao {
             AND (:hideSystemApps = 0 OR (callerPackage != 'system_server' AND callerPackage NOT LIKE 'com.android%' AND callerPackage NOT LIKE 'android%'))
             AND (:hasExtras = 0 OR extrasSize > 0)
             AND (:useStatusFilter = 0 OR deliveryStatus IN (:statusFilters))
+            AND (:requiresPermission IS NULL OR (:requiresPermission = 1 AND requiredPermissions IS NOT NULL AND requiredPermissions != '') OR (:requiresPermission = 0 AND (requiredPermissions IS NULL OR requiredPermissions = '')))
         ORDER BY timestamp DESC
     """)
     fun getFilteredRecords(
@@ -48,7 +49,8 @@ interface IntentRecordDao {
         hideSystemApps: Boolean,
         hasExtras: Boolean,
         useStatusFilter: Boolean,
-        statusFilters: List<String>
+        statusFilters: List<String>,
+        requiresPermission: Boolean?
     ): Flow<List<IntentRecord>>
 
     @Query("DELETE FROM intent_records")

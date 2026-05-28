@@ -8,7 +8,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mamzleintencje.data.IntentRecord
 import com.example.mamzleintencje.data.IntentRecordDao
-import com.example.mamzleintencje.data.IntentType
 import com.example.mamzleintencje.monitor.MonitorState
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,8 +30,7 @@ class MainViewModel(application: Application, private val dao: IntentRecordDao) 
         val searchQuery: String = "",
         val allowedStatuses: Set<String> = setOf("DELIVERED", "PARTIALLY_SKIPPED", "SKIPPED", "DEFERRED"),
         val hasExtras: Boolean = false,
-        val requiresPermission: Boolean? = null,
-        val intentType: IntentType? = null
+        val requiresPermission: Boolean? = null
     )
 
     private val _filterState = MutableStateFlow(FilterState())
@@ -46,8 +44,9 @@ class MainViewModel(application: Application, private val dao: IntentRecordDao) 
             minCvss = filter.minCvss,
             hideSystemApps = filter.hideSystemApps,
             hasExtras = filter.hasExtras,
-            useStatusFilter = filter.allowedStatuses.isNotEmpty(),
-            statusFilters = filter.allowedStatuses.toList()
+            useStatusFilter = filter.allowedStatuses.size < 4,
+            statusFilters = filter.allowedStatuses.toList(),
+            requiresPermission = filter.requiresPermission
         )
     }.stateIn(
         scope = viewModelScope,
