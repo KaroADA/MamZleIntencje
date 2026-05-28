@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,21 +42,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.mamzleintencje.data.IntentRecord
+import com.example.mamzleintencje.data.IntentType
 import com.example.mamzleintencje.ui.theme.MamZłeIntencjeTheme
 import com.example.mamzleintencje.ui.viewmodel.MainViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.platform.LocalLocale
 
 @Composable
 fun LogListScreen(viewModel: MainViewModel) {
-    val logs = MainViewModel.getMockIntents()
-    val uniqueLogs = remember(logs) {
-        List(10) { iteration ->
-            logs.map { it.copy(id = "${it.id}_$iteration") }
-        }.flatten()
-    }
-    LogListContent(logs = uniqueLogs)
+    val logs by viewModel.intentRecords.collectAsState(initial = emptyList())
+    LogListContent(logs = logs)
 }
 @Composable
 fun LogListContent(logs: List<IntentRecord>, modifier: Modifier = Modifier) {
@@ -159,7 +157,7 @@ fun IntentLogCard(
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            text = String.format(Locale.getDefault(), "%.1f", record.cvssBaseScore),
+                            text = String.format(LocalLocale.current.platformLocale, "%.1f", record.cvssBaseScore),
                             color = Color.White,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.ExtraBold
