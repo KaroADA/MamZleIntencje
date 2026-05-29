@@ -20,6 +20,7 @@ import com.example.mamzleintencje.data.IntentRecordDao
 import com.example.mamzleintencje.ui.viewmodel.MainViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.log10
 
 @Composable
 fun DashboardScreen(viewModel: MainViewModel) {
@@ -164,18 +165,22 @@ fun MetricItem(label: String, count: Int, color: Color) {
 
 @Composable
 fun ThreatPieChart(critical: Int, medium: Int, low: Int, modifier: Modifier = Modifier) {
-    val total = (critical + medium + low).toFloat()
-    if (total == 0f) {
+    if (critical == 0 && medium == 0 && low == 0) {
         Box(modifier = modifier, contentAlignment = Alignment.Center) {
             Text("NO DATA", style = MaterialTheme.typography.labelSmall)
         }
         return
     }
 
+    val wCritical = log10(critical.toDouble() + 1.0)
+    val wMedium = log10(medium.toDouble() + 1.0)
+    val wLow = log10(low.toDouble() + 1.0)
+    val wTotal = (wCritical + wMedium + wLow).toFloat()
+
     Canvas(modifier = modifier) {
-        val criticalAngle = (critical / total) * 360f
-        val mediumAngle = (medium / total) * 360f
-        val lowAngle = (low / total) * 360f
+        val criticalAngle = (wCritical.toFloat() / wTotal) * 360f
+        val mediumAngle = (wMedium.toFloat() / wTotal) * 360f
+        val lowAngle = (wLow.toFloat() / wTotal) * 360f
 
         drawArc(
             color = Color(0xFFD32F2F),
