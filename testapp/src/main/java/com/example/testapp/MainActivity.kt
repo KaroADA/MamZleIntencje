@@ -211,13 +211,37 @@ class MainActivity : ComponentActivity() {
 
                         Button(
                             onClick = {
-                                Log.d("IntentGen", "Button clicked: Broadcast Boundary Crossing")
-                                val intent = Intent("com.example.mamzleintencje.TRIGGER_ALARM").apply {
-                                    setPackage("com.example.mamzleintencje")
-                                    putExtra("token", "stolen_session_key")
+                                Log.d("IntentGen", "Button clicked: Dynamic Boundary Crossing")
+
+                                val pm = packageManager
+                                val receivers = pm.queryBroadcastReceivers(Intent(Intent.ACTION_BOOT_COMPLETED), 0)
+
+                                val victim = receivers.firstOrNull {
+                                    val pkg = it.activityInfo.packageName
+                                    pkg != packageName &&
+                                            !pkg.startsWith("com.android.") &&
+                                            !pkg.startsWith("android") &&
+                                            !pkg.startsWith("com.samsung.") &&
+                                            !pkg.startsWith("com.google.")
                                 }
-                                sendBroadcast(intent)
-                                Log.d("IntentGen", "Sent boundary crossing broadcast")
+
+                                if (victim != null) {
+                                    val targetPkg = victim.activityInfo.packageName
+                                    val targetClass = victim.activityInfo.name
+
+                                    Log.d("IntentGen", "Targeting victim: $targetPkg/$targetClass")
+
+                                    val intent = Intent("com.example.mamzleintencje.TRIGGER_ALARM").apply {
+                                        setClassName(targetPkg, targetClass)
+                                        addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+                                        putExtra("token", "stolen_session_key")
+                                    }
+
+                                    sendBroadcast(intent)
+                                    Log.d("IntentGen", "Sent boundary crossing broadcast to $targetPkg")
+                                } else {
+                                    Log.e("IntentGen", "No suitable victim receiver found!")
+                                }
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp)
@@ -230,9 +254,11 @@ class MainActivity : ComponentActivity() {
                                 Log.d("IntentGen", "Button clicked: Broadcast Suspicious Payload")
                                 val intent = Intent("com.example.testapp.EXFILTRATE_DATA").apply {
                                     setPackage("com.example.testapp")
-                                    putExtra("payload", "user_contacts_dump")
+                                    for (i in 1..15) {
+                                        putExtra("stolen_contacts_chunk_$i", "stolen_data_block")
+                                    }
                                 }
-                                sendBroadcast(intent)
+                                sendBroadcast(intent, android.Manifest.permission.READ_CONTACTS)
                                 Log.d("IntentGen", "Sent suspicious payload broadcast")
                             },
                             modifier = Modifier.fillMaxWidth(),

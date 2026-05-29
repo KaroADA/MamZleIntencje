@@ -56,6 +56,9 @@ interface IntentRecordDao {
         requiresPermission: Boolean?
     ): Flow<List<IntentRecord>>
 
+    @Query("SELECT packageName FROM threat_actors WHERE intentId = :intentId")
+    fun getThreatActorsForIntent(intentId: String): Flow<List<String>>
+
     @Query("DELETE FROM intent_records")
     suspend fun deleteAll(): Int
 

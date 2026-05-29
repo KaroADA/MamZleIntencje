@@ -29,7 +29,8 @@ data class IntentRecord(
     val skipReasons: String?,        // Semicolon-separated list of why skipped targets were skipped
 
     val cvssVector: String = "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
-    val cvssBaseScore: Double = 0.0
+    val cvssBaseScore: Double = 0.0,
+    val riskReasons: String? = null
 )
 
 enum class IntentType {

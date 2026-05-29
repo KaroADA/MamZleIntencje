@@ -56,7 +56,8 @@ fun LogListScreen(viewModel: MainViewModel) {
     val logs by viewModel.intentRecords.collectAsState(initial = emptyList())
     LogListContent(
         logs = logs,
-        onItemClick = { id -> viewModel.markAsSeen(id) }
+        onItemClick = { id -> viewModel.markAsSeen(id) },
+        getThreatActors = { id -> viewModel.getThreatActorsForIntent(id) }
     )
 }
 
@@ -64,7 +65,8 @@ fun LogListScreen(viewModel: MainViewModel) {
 fun LogListContent(
     logs: List<IntentRecord>,
     modifier: Modifier = Modifier,
-    onItemClick: ((String) -> Unit)? = null
+    onItemClick: ((String) -> Unit)? = null,
+    getThreatActors: (String) -> kotlinx.coroutines.flow.Flow<List<String>>
 ) {
     var expandedId by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -79,7 +81,8 @@ fun LogListContent(
                 onExpandToggle = {
                     expandedId = if (expandedId == log.id) null else log.id
                     onItemClick?.invoke(log.id)
-                }
+                },
+                getThreatActors = getThreatActors
             )
         }
     }
@@ -89,7 +92,8 @@ fun LogListContent(
 fun IntentLogCard(
     record: IntentRecord,
     expanded: Boolean,
-    onExpandToggle: () -> Unit
+    onExpandToggle: () -> Unit,
+    getThreatActors: (String) -> kotlinx.coroutines.flow.Flow<List<String>>
 ) {
     val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
     val timeString = timeFormatter.format(Date(record.timestamp))
@@ -186,7 +190,8 @@ fun IntentLogCard(
                 }
 
                 if (expanded) {
-                    ExpandedContent(record)
+                    val threatActors by getThreatActors(record.id).collectAsState(initial = emptyList())
+                    ExpandedContent(record, threatActors)
                 }
             }
 
@@ -206,7 +211,7 @@ fun IntentLogCard(
     }
 }
 @Composable
-fun ExpandedContent(record: IntentRecord) {
+fun ExpandedContent(record: IntentRecord, threatActors: List<String> = emptyList()) {
     HorizontalDivider(
         modifier = Modifier.padding(horizontal = 16.dp),
         thickness = 0.5.dp,
@@ -220,12 +225,15 @@ fun ExpandedContent(record: IntentRecord) {
     ) {
         // 1. Caller
         SectionLabel("Caller")
-        Text(
-            text = "${record.callerPackage ?: "system_server"} (${record.callerUid ?: "N/A"})",
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "${record.callerPackage ?: "system_server"} (${record.callerUid ?: "N/A"})",
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = if (threatActors.contains(record.callerPackage)) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = if (threatActors.contains(record.callerPackage)) FontWeight.Bold else FontWeight.Normal
+            )
+        }
 
         if (!record.requiredPermissions.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(12.dp))
@@ -272,13 +280,40 @@ fun ExpandedContent(record: IntentRecord) {
         }
 
         if (!record.deliveredReceivers.isNullOrBlank()) {
-            DetailItem("Delivered to", record.deliveredReceivers)
+            DetailItemWithHighlights("Delivered to", record.deliveredReceivers, threatActors)
         }
         if (!record.skippedReceivers.isNullOrBlank()) {
             DetailItem("Skipped for", record.skippedReceivers)
         }
         if (!record.skipReasons.isNullOrBlank()) {
             DetailItem("Skip Reasons", record.skipReasons)
+        }
+
+        if (!record.riskReasons.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+            Spacer(modifier = Modifier.height(8.dp))
+            SectionLabel("Risk Analysis")
+            
+            val reasons = record.riskReasons.split("; ").filter { it.isNotEmpty() }
+            reasons.forEach { reason ->
+                Row(
+                    modifier = Modifier.padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(4.dp)
+                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = reason,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -304,13 +339,17 @@ fun ExpandedContent(record: IntentRecord) {
             )
         }
 
-        val tags = parseCvssTags(record.cvssVector)
+        val tags = generateThreatTags(record)
         if (tags.isNotEmpty()) {
             Spacer(modifier = Modifier.height(6.dp))
-            Row {
-                tags.forEach { tag ->
-                    Badge(text = tag)
-                    Spacer(modifier = Modifier.width(6.dp))
+            Row(modifier = Modifier.fillMaxWidth()) {
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+                ) {
+                    tags.forEach { (tag, color) ->
+                        Badge(text = tag, color = color)
+                    }
                 }
             }
         }
@@ -363,6 +402,34 @@ fun ExpandedContent(record: IntentRecord) {
 }
 
 @Composable
+private fun DetailItemWithHighlights(label: String, value: String, highlights: List<String>) {
+    Column(modifier = Modifier.padding(top = 8.dp)) {
+        Text(
+            text = label.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.outline
+        )
+        
+        val items = value.split(", ").map { it.trim() }
+        Column {
+            items.forEach { item ->
+                val isThreat = highlights.contains(item)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = item,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (isThreat) Color(0xFFE53935) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isThreat) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DetailItem(label: String, value: String) {
     Column(modifier = Modifier.padding(top = 8.dp)) {
         Text(
@@ -392,35 +459,78 @@ private fun SectionLabel(text: String) {
 }
 
 @Composable
-private fun Badge(text: String) {
+private fun Badge(text: String, color: Color = MaterialTheme.colorScheme.secondaryContainer) {
     Box(
         modifier = Modifier
-            .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(4.dp))
+            .background(color, RoundedCornerShape(4.dp))
             .padding(horizontal = 6.dp, vertical = 2.dp)
     ) {
+        val textColor = if (color == MaterialTheme.colorScheme.secondaryContainer) 
+            MaterialTheme.colorScheme.onSecondaryContainer 
+        else Color.White
+        
         Text(
             text = text.uppercase(),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSecondaryContainer
+            color = textColor
         )
     }
 }
 
-private fun parseCvssTags(vector: String): List<String> {
-    val tags = mutableListOf<String>()
-    val parts = vector.split("/")
-    for (part in parts) {
-        val kv = part.split(":")
-        if (kv.size == 2) {
-            when (kv[0]) {
-                "AV" -> if (kv[1] == "N") tags.add("Network")
-                "UI" -> if (kv[1] == "N") tags.add("No Interaction")
-                "PR" -> if (kv[1] == "N") tags.add("No Privileges")
-            }
+private fun generateThreatTags(record: IntentRecord): List<Pair<String, Color>> {
+    val tags = mutableListOf<Pair<String, Color>>()
+    val reasons = record.riskReasons?.split(";")?.map { it.trim() } ?: emptyList()
+
+    if (reasons.any { it.contains("shell/root", ignoreCase = true) }) {
+        tags.add("Shell/Root Abuse" to Color(0xFFB71C1C))
+    }
+    if (reasons.any { it.contains("Critical system action", ignoreCase = true) }) {
+        tags.add("Critical Action" to Color(0xFFD32F2F))
+    }
+    if (reasons.any { it.contains("Persistence", ignoreCase = true) }) {
+        tags.add("Persistence Attempt" to Color(0xFF512DA8))
+    }
+
+    val map = record.cvssVector.split("/").associate {
+        val kv = it.split(":")
+        if (kv.size == 2) kv[0] to kv[1] else "" to ""
+    }
+
+    val isSandboxEscape = map["S"] == "C"
+
+    if (isSandboxEscape) {
+        tags.add("Sandbox Escape" to Color(0xFFC2185B))
+    } else {
+        if (reasons.any { it.contains("Organization boundary", ignoreCase = true) }) {
+            tags.add("Cross-Boundary IPC" to Color(0xFFF57C00))
+        }
+        if (reasons.any { it.contains("Suspicious receivers", ignoreCase = true) }) {
+            tags.add("Suspicious Observer" to Color(0xFFE64A19))
         }
     }
-    return tags.take(3)
+// 3. METADATA TAGS
+    if (reasons.any { it.contains("Sensitive permissions", ignoreCase = true) }) {
+        tags.add("Privileged Scope" to Color(0xFF7B1FA2))
+    }
+
+    if (record.extrasSize > 10 || reasons.any { it.contains("Large data payload", ignoreCase = true) }) {
+        tags.add("Large Payload" to Color(0xFF00897B))
+    }
+
+    val isBlocked = reasons.any { it.contains("blocked by OS", ignoreCase = true) }
+    val hasHiddenExtras = record.skipReasons?.contains("(has extras)") == true
+    val isReadPermission = record.requiredPermissions?.contains("READ", ignoreCase = true) == true
+
+    if (isBlocked && hasHiddenExtras) {
+        if (isReadPermission) {
+            tags.add("Data Exfiltration Attempt" to Color(0xFFD32F2F))
+        } else {
+            tags.add("Hidden Payload" to Color(0xFF00897B))
+        }
+    }
+
+    return tags.distinctBy { it.first }
 }
 
 @SuppressLint("ViewModelConstructorInComposable")
@@ -433,6 +543,9 @@ fun LogListPreview() {
     }.flatten()
 
     MamZłeIntencjeTheme {
-        LogListContent(logs = uniquePreviewLogs)
+        LogListContent(
+            logs = uniquePreviewLogs,
+            getThreatActors = { kotlinx.coroutines.flow.flowOf(emptyList()) }
+        )
     }
 }

@@ -13,7 +13,8 @@ object CvssCalculator {
         val vector: String,
         val score: Double,
         val suspiciousReceivers: List<String> = emptyList(),
-        val blameSender: Boolean = true
+        val blameSender: Boolean = true,
+        val reasons: List<String> = emptyList()
     )
 
     private const val TAG = "CvssCalculator"
@@ -31,6 +32,12 @@ object CvssCalculator {
         "app.revanced."
     )
 
+    private val APP_FAMILIES = listOf(
+        setOf("pl.tablica", "com.naspers"),
+        setOf("com.facebook", "com.instagram", "com.whatsapp", "com.oculus"),
+        setOf("com.google", "app.revanced")
+    )
+
     private val CONSUMER_APPS = setOf(
         "com.facebook.orca",
         "com.facebook.katana",
@@ -38,6 +45,7 @@ object CvssCalculator {
         "com.instagram.android",
         "com.discord",
         "pl.tablica",
+        "com.naspers.",
         "org.kde.kdeconnect_tp",
         "io.homeassistant.companion.android",
         "com.whatsapp",
@@ -85,7 +93,21 @@ object CvssCalculator {
         "INPUTMETHOD_STARTING",
         "RESPONSEAXT9INFO",
         "BADGE_COUNT_UPDATE",
-        "DREAMING_STARTED"
+        "DREAMING_STARTED",
+        "PUSH_DISMISSED",
+        "ANALYTICS",
+        "METRICS"
+    )
+
+    private val DANGEROUS_PERMISSIONS = setOf(
+        "android.permission.READ_SMS",
+        "android.permission.RECEIVE_SMS",
+        "android.permission.READ_CONTACTS",
+        "android.permission.READ_CALL_LOG",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE"
     )
 
     fun calculate(
@@ -99,11 +121,7 @@ object CvssCalculator {
     ): CvssResult {
         val act = action ?: ""
         val actUpper = act.uppercase()
-
-        // 0. Skipped delivery is always 0.0
-        if (deliveryStatus == "SKIPPED") {
-            return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0)
-        }
+        val riskReasons = mutableListOf<String>()
 
         // 1. Classify Action First
         val isInformational = BENIGN_ACTIONS.any { actUpper.contains(it) } ||
@@ -112,50 +130,79 @@ object CvssCalculator {
         val isCritical = CRITICAL_ACTIONS.any { actUpper.contains(it) }
         val isCustomAction = act.contains(".") && !isTrusted(act.substringBeforeLast('.'))
 
-        if (isInformational && !actUpper.contains("POWER")) {
-            return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0)
+        // Shell/Root Heuristic
+        val isShellOrRoot = callerUid == 2000 || callerUid == 0
+        val isStandardSystemAction = actUpper.startsWith("ANDROID.") || actUpper.startsWith("COM.ANDROID.") || isInformational || isPersistence
+
+        if (isInformational && !actUpper.contains("POWER") && !isShellOrRoot) {
+            return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0, reasons = listOf("Benign informational action"))
         }
+
+        if (isShellOrRoot && !isStandardSystemAction) riskReasons.add("Arbitrary shell/root broadcast detected")
+        if (isCritical) riskReasons.add("Critical system action")
+        if (isPersistence) riskReasons.add("Persistence-related action")
 
         // 2. Identify Trusted Entities & Anti-Spoofing
         val isSystemUid = callerUid != null && (callerUid < SYSTEM_UID_THRESHOLD || callerUid == -1)
         val isTrustedPkg = callerPackage != null && isTrusted(callerPackage)
 
         val isTrustedCaller = isSystemUid || (isTrustedPkg && !isCustomAction)
+        if (!isTrustedCaller && !isShellOrRoot) riskReasons.add("Untrusted caller")
 
         val receivers = deliveredReceivers?.split(Regex("[,\\s\\n\\r]+"))
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() } ?: emptyList()
 
         val suspiciousReceiversList = mutableListOf<String>()
+        val baseCallerPkg = callerPackage?.substringBefore(':')
+
         for (receiver in receivers) {
             val pkg = receiver.substringBefore('/')
-            if (!isTrusted(pkg) && !CONSUMER_APPS.any { pkg.startsWith(it) }) {
+            val baseReceiverPkg = pkg.substringBefore(':')
+
+            if (baseReceiverPkg != baseCallerPkg && !isSameOrg(baseCallerPkg, baseReceiverPkg) && !isTrusted(baseReceiverPkg) && !CONSUMER_APPS.any { baseReceiverPkg.startsWith(it) }) {
                 suspiciousReceiversList.add(pkg)
             }
         }
         val hasSuspiciousReceiver = suspiciousReceiversList.isNotEmpty()
+        if (hasSuspiciousReceiver) riskReasons.add("Suspicious receivers detected")
 
         // 3. Boundary Crossing (Caller vs Receivers)
         var crossedBorders = false
+        var allInternal = true
+        if (receivers.isEmpty()) allInternal = false
+
         for (receiver in receivers) {
-            val recPkg = receiver.substringBefore('/')
-            if (!isSameOrg(callerPackage, recPkg) && recPkg != "system" && recPkg != "android") {
+            val recPkg = receiver.substringBefore('/').substringBefore(':')
+
+            if (!isSameOrg(baseCallerPkg, recPkg) && recPkg != "system" && recPkg != "android") {
                 crossedBorders = true
-                break
+                allInternal = false
             }
         }
 
-        // 4. Decision Engine
+        if (crossedBorders) riskReasons.add("Organization boundary crossing")
+        if (allInternal && receivers.isNotEmpty()) riskReasons.add("Internal app communication")
+
+        // 4. Supplemental Heuristics
+        val hasDangerousPermission = requiredPermissions?.split(",")?.any { perm ->
+            DANGEROUS_PERMISSIONS.contains(perm.trim())
+        } ?: false
+        if (hasDangerousPermission) riskReasons.add("Sensitive permissions required")
+
+        if (extrasSize > 10) riskReasons.add("Large data payload")
+
+        // 5. Decision Engine
         var av = "L"; var ac = "L"; var pr = "N"; var ui = "N"
         var s = "U"; var c = "N"; var i = "N"; var a = "N"
 
         when {
-            // Shell activity (2000) with custom action is a high-risk exploit/spoofing attempt
-            callerUid == 2000 && isCustomAction -> {
+            // Unrestricted Shell/Root Broadcasts
+            isShellOrRoot && !isStandardSystemAction -> {
                 s = "C"; c = "H"; i = "H"; a = "L"
             }
 
-            // Regression Control: Passive Sniffing (Prioritize catching suspicious observers)
+            // Passive Sniffing
             (isInformational || isPersistence) && hasSuspiciousReceiver -> {
                 c = "L"
                 if (isPersistence) {
@@ -165,14 +212,30 @@ object CvssCalculator {
                 pr = if (isTrustedCaller) "N" else "L"
             }
 
-            // Trusted caller (System/OEM/Shell) + no suspicious receivers = 0.0
+            // Trusted Caller Routine
             isTrustedCaller && !hasSuspiciousReceiver && !isCritical -> {
-                return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0)
+                return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0, reasons = listOf("Trusted system traffic"))
             }
 
-            // Custom IPC Risk (Untrusted apps using unmapped actions across boundaries)
+            // Custom IPC Risk
             !isTrustedCaller && isCustomAction && (crossedBorders || hasSuspiciousReceiver) -> {
                 s = "C"; c = "H"; i = "H"
+            }
+
+            // Behavior-Based Malware Traps (Catches attempts even if blocked by OS)
+            !isTrustedCaller && (hasDangerousPermission || extrasSize > 10) -> {
+                s = "U"
+                c = if (hasDangerousPermission) "H" else "L"
+                i = if (hasDangerousPermission) "H" else "N"
+                if (deliveryStatus == "SKIPPED" || receivers.isEmpty()) {
+                    riskReasons.add("Attempted exploit blocked by OS sandbox")
+                }
+            }
+
+            // Internal Communication Mitigation
+            allInternal && !isCritical -> {
+                c = if (extrasSize > 5) "L" else "N"
+                s = "U"
             }
 
             // Critical System Events
@@ -183,7 +246,8 @@ object CvssCalculator {
 
             else -> {
                 if (!hasSuspiciousReceiver && !crossedBorders) {
-                    return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0)
+                    val msg = if (deliveryStatus == "SKIPPED") "Benign skipped traffic" else "Benign local traffic"
+                    return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", 0.0, reasons = listOf(msg))
                 }
                 c = "L"
                 if (!isTrustedCaller) i = "L"
@@ -193,9 +257,9 @@ object CvssCalculator {
         val vector = "CVSS:3.1/AV:$av/AC:$ac/PR:$pr/UI:$ui/S:$s/C:$c/I:$i/A:$a"
         val score = calculateScore(av, ac, pr, ui, s, c, i, a)
 
-        val blameSender = !isTrustedCaller || isCustomAction || isCritical
+        val blameSender = !isTrustedCaller || isCustomAction || isCritical || (isShellOrRoot && !isStandardSystemAction) || hasDangerousPermission
 
-        return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, vector, score, suspiciousReceiversList, blameSender)
+        return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, vector, score, suspiciousReceiversList, blameSender, riskReasons)
     }
 
     private fun isTrusted(pkg: String): Boolean {
@@ -209,19 +273,30 @@ object CvssCalculator {
     private fun isSameOrg(p1: String?, p2: String?): Boolean {
         if (p1 == null || p2 == null) return false
         if (p1 == p2) return true
-        val dot1 = p1.indexOf('.'); if (dot1 == -1) return false
-        val dot2 = p1.indexOf('.', dot1 + 1)
-        val org = if (dot2 == -1) p1 else p1.substring(0, dot2)
-        return p2.startsWith(org)
+
+        val baseP1 = p1.substringBefore(':')
+        val baseP2 = p2.substringBefore(':')
+        if (baseP1 == baseP2) return true
+
+        for (family in APP_FAMILIES) {
+            val p1InFamily = family.any { baseP1.startsWith(it) }
+            val p2InFamily = family.any { baseP2.startsWith(it) }
+            if (p1InFamily && p2InFamily) return true
+        }
+
+        val dot1 = baseP1.indexOf('.'); if (dot1 == -1) return false
+        val dot2 = baseP1.indexOf('.', dot1 + 1)
+        val org = if (dot2 == -1) baseP1 else baseP1.substring(0, dot2)
+        return baseP2.startsWith(org)
     }
 
-    private fun result(act: String, pkg: String?, uid: Int?, perms: String?, extras: Int, status: String?, receivers: String?, vector: String, score: Double, suspicious: List<String> = emptyList(), blameSender: Boolean = true): CvssResult {
+    private fun result(act: String, pkg: String?, uid: Int?, perms: String?, extras: Int, status: String?, receivers: String?, vector: String, score: Double, suspicious: List<String> = emptyList(), blameSender: Boolean = true, reasons: List<String> = emptyList()): CvssResult {
         try {
-            Log.d(TAG, "Action: $act, Caller: $pkg ($uid), Perms: $perms, Extras: $extras, Status: $status, Receivers: $receivers -> $vector ($score) [BlameSender: $blameSender, SuspiciousRecs: $suspicious]")
+            Log.d(TAG, "Action: $act, Caller: $pkg ($uid), Perms: $perms, Extras: $extras, Status: $status, Receivers: $receivers -> $vector ($score) [Reasons: $reasons]")
         } catch (e: Throwable) {
             // Probably in unit test
         }
-        return CvssResult(vector, score, suspicious, blameSender)
+        return CvssResult(vector, score, suspicious, blameSender, reasons)
     }
 
     private fun calculateScore(av: String, ac: String, pr: String, ui: String, s: String, c: String, i: String, a: String): Double {

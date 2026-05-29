@@ -102,6 +102,8 @@ class MainViewModel(application: Application, private val dao: IntentRecordDao) 
         initialValue = emptyList()
     )
 
+    fun getThreatActorsForIntent(intentId: String) = dao.getThreatActorsForIntent(intentId)
+
     fun updateFilter(update: (FilterState) -> FilterState) {
         _filterState.value = update(_filterState.value)
         Log.d("MainViewModel", "Filter state changed: ${_filterState.value}")

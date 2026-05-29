@@ -308,7 +308,8 @@ class IntentMonitor(
                     deliveredReceivers = deliveredReceivers,
                     skippedReceivers = skippedReceivers,
                     cvssVector = cvssResult.vector,
-                    cvssBaseScore = cvssResult.score
+                    cvssBaseScore = cvssResult.score,
+                    riskReasons = cvssResult.reasons.joinToString("; ")
                 ))
 
                 if (cvssResult.score > 0) {

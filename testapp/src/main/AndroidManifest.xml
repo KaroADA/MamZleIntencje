@@ -38,11 +38,6 @@
             </intent-filter>
 
         </receiver>
-        <receiver android:name=".AlarmReceiver" android:exported="true">
-            <intent-filter>
-                <action android:name="com.example.mamzleintencje.TRIGGER_ALARM" />
-            </intent-filter>
-        </receiver>
         <receiver android:name=".ExfiltrateReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="com.example.testapp.EXFILTRATE_DATA" />
