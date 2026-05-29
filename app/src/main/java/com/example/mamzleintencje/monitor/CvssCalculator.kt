@@ -11,7 +11,9 @@ object CvssCalculator {
 
     data class CvssResult(
         val vector: String,
-        val score: Double
+        val score: Double,
+        val suspiciousReceivers: List<String> = emptyList(),
+        val blameSender: Boolean = true
     )
 
     private const val TAG = "CvssCalculator"
@@ -124,14 +126,14 @@ object CvssCalculator {
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() } ?: emptyList()
 
-        var hasSuspiciousReceiver = false
+        val suspiciousReceiversList = mutableListOf<String>()
         for (receiver in receivers) {
             val pkg = receiver.substringBefore('/')
             if (!isTrusted(pkg) && !CONSUMER_APPS.any { pkg.startsWith(it) }) {
-                hasSuspiciousReceiver = true
-                break
+                suspiciousReceiversList.add(pkg)
             }
         }
+        val hasSuspiciousReceiver = suspiciousReceiversList.isNotEmpty()
 
         // 3. Boundary Crossing (Caller vs Receivers)
         var crossedBorders = false
@@ -191,7 +193,9 @@ object CvssCalculator {
         val vector = "CVSS:3.1/AV:$av/AC:$ac/PR:$pr/UI:$ui/S:$s/C:$c/I:$i/A:$a"
         val score = calculateScore(av, ac, pr, ui, s, c, i, a)
 
-        return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, vector, score)
+        val blameSender = !isTrustedCaller || isCustomAction || isCritical
+
+        return result(act, callerPackage, callerUid, requiredPermissions, extrasSize, deliveryStatus, deliveredReceivers, vector, score, suspiciousReceiversList, blameSender)
     }
 
     private fun isTrusted(pkg: String): Boolean {
@@ -211,9 +215,13 @@ object CvssCalculator {
         return p2.startsWith(org)
     }
 
-    private fun result(act: String, pkg: String?, uid: Int?, perms: String?, extras: Int, status: String?, receivers: String?, vector: String, score: Double): CvssResult {
-        Log.d(TAG, "Action: $act, Caller: $pkg ($uid), Perms: $perms, Extras: $extras, Status: $status, Receivers: $receivers -> $vector ($score)")
-        return CvssResult(vector, score)
+    private fun result(act: String, pkg: String?, uid: Int?, perms: String?, extras: Int, status: String?, receivers: String?, vector: String, score: Double, suspicious: List<String> = emptyList(), blameSender: Boolean = true): CvssResult {
+        try {
+            Log.d(TAG, "Action: $act, Caller: $pkg ($uid), Perms: $perms, Extras: $extras, Status: $status, Receivers: $receivers -> $vector ($score) [BlameSender: $blameSender, SuspiciousRecs: $suspicious]")
+        } catch (e: Throwable) {
+            // Probably in unit test
+        }
+        return CvssResult(vector, score, suspicious, blameSender)
     }
 
     private fun calculateScore(av: String, ac: String, pr: String, ui: String, s: String, c: String, i: String, a: String): Double {

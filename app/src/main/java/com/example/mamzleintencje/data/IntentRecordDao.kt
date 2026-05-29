@@ -15,6 +15,9 @@ interface IntentRecordDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(records: List<IntentRecord>): List<Long>
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertThreatActors(actors: List<ThreatActor>): List<Long>
+
     @Query("SELECT * FROM intent_records ORDER BY timestamp DESC")
     fun getAllRecords(): Flow<List<IntentRecord>>
     @Query("SELECT * FROM intent_records WHERE id = :id LIMIT 1")
@@ -81,9 +84,9 @@ interface IntentRecordDao {
     )
 
     @Query("""
-        SELECT callerPackage, MAX(cvssBaseScore) as maxScore, COUNT(*) as intentCount 
-        FROM intent_records 
-        GROUP BY callerPackage 
+        SELECT packageName as callerPackage, MAX(score) as maxScore, COUNT(DISTINCT intentId) as intentCount 
+        FROM threat_actors 
+        GROUP BY packageName
         ORDER BY maxScore DESC 
         LIMIT 5
     """)

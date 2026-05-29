@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [IntentRecord::class], version = 1, exportSchema = false)
+@Database(entities = [IntentRecord::class, ThreatActor::class], version = 3, exportSchema = false)
 abstract class IntentDatabase : RoomDatabase() {
     abstract fun intentRecordDao(): IntentRecordDao
 
@@ -19,7 +19,9 @@ abstract class IntentDatabase : RoomDatabase() {
                     context.applicationContext,
                     IntentDatabase::class.java,
                     "intent_database"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration(true)
+                    .build()
                 INSTANCE = instance
                 instance
             }

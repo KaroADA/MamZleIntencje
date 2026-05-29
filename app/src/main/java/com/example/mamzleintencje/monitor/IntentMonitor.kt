@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import com.example.mamzleintencje.MainActivity
 import com.example.mamzleintencje.data.IntentDatabase
 import com.example.mamzleintencje.data.IntentRecord
+import com.example.mamzleintencje.data.ThreatActor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -65,7 +66,7 @@ class IntentMonitor(
                     sequence.map { it.trim() }.toList()
                 }
                 Log.d(TAG, "${lines.size} lines to process.")
-                val records = parseLines(lines)
+                val (records, threatActors) = parseLines(lines)
                 var triggeredAlert = false
 
                 for (record in records) {
@@ -78,7 +79,8 @@ class IntentMonitor(
                 }
                 if (records.isNotEmpty()) {
                     intentDatabase.intentRecordDao().insertAll(records)
-                    Log.d(TAG, "Processed ${records.size} records.")
+                    intentDatabase.intentRecordDao().insertThreatActors(threatActors)
+                    Log.d(TAG, "Processed ${records.size} records and ${threatActors.size} threat actors.")
                 }
                 if (triggeredAlert) {
                     Log.d(TAG, "SUS")
@@ -134,9 +136,10 @@ class IntentMonitor(
         return hashBytes.joinToString("") { "%02x".format(it) }
     }
 
-    private fun parseLines(lines: List<String>): List<IntentRecord> {
+    private fun parseLines(lines: List<String>): Pair<List<IntentRecord>, List<ThreatActor>> {
         var i = 0
         val res = ArrayList<IntentRecord>()
+        val actors = ArrayList<ThreatActor>()
 
         while (i < lines.size) {
             val line = lines[i]
@@ -287,8 +290,9 @@ class IntentMonitor(
                     deliveredReceivers = deliveredReceivers
                 )
 
+                val intentId = generateIntentHash(finalAction, enqTime, dispTime, extrasDump)
                 res.add(IntentRecord(
-                    id = generateIntentHash(finalAction, enqTime, dispTime, extrasDump),
+                    id = intentId,
                     timestamp = enqTime,
                     action = finalAction,
                     callerPackage = callerPackage,
@@ -306,9 +310,30 @@ class IntentMonitor(
                     cvssVector = cvssResult.vector,
                     cvssBaseScore = cvssResult.score
                 ))
+
+                if (cvssResult.score > 0) {
+                    if (cvssResult.blameSender && callerPackage != null) {
+                        actors.add(ThreatActor(
+                            intentId = intentId,
+                            packageName = callerPackage,
+                            score = cvssResult.score,
+                            timestamp = enqTime,
+                            role = "SENDER"
+                        ))
+                    }
+                    for (suspiciousRec in cvssResult.suspiciousReceivers) {
+                        actors.add(ThreatActor(
+                            intentId = intentId,
+                            packageName = suspiciousRec,
+                            score = cvssResult.score,
+                            timestamp = enqTime,
+                            role = "RECEIVER"
+                        ))
+                    }
+                }
             }
         }
-        return res
+        return Pair(res, actors)
     }
     private fun sendNotification() {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
