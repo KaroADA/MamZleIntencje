@@ -330,7 +330,7 @@ fun FilterBottomSheetContent(
             FilterChip(
                 selected = filterState.minCvss in 4.0..6.9,
                 onClick = { onFilterChange { it.copy(minCvss = if (it.minCvss in 4.0..6.9) 0.0 else 4.0) } },
-                label = { Text("Warnings (4.0 - 6.9)") }
+                label = { Text("Warnings (4.0+)") }
             )
         }
 
